@@ -424,20 +424,6 @@ export function ChatPage() {
             <h2 id="options-title">Options</h2>
             <p>Changes apply to the next response.</p>
           </div>
-          <label className="chat-option" htmlFor="chat-api">
-            <span>API</span>
-            <select
-              disabled={isLoading}
-              id="chat-api"
-              onChange={(event) =>
-                handleApiChange(event.target.value as ChatApi)
-              }
-              value={api}
-            >
-              <option value="chat">Chat Completions</option>
-              <option value="responses">Responses</option>
-            </select>
-          </label>
           <label className="chat-option" htmlFor="chat-model">
             <span>Model</span>
             <select
@@ -455,6 +441,20 @@ export function ChatPage() {
                   {model}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="chat-option" htmlFor="chat-api">
+            <span>API</span>
+            <select
+              disabled={isLoading}
+              id="chat-api"
+              onChange={(event) =>
+                handleApiChange(event.target.value as ChatApi)
+              }
+              value={api}
+            >
+              <option value="chat">Chat Completions</option>
+              <option value="responses">Responses</option>
             </select>
           </label>
           <label className="chat-option" htmlFor="response-delivery">
