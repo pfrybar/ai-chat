@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This repository is a TypeScript monorepo for an OpenAI chat API playground. It contains a React/Vite frontend and an Express backend. The main page sends complete Chat Completions requests through `POST /api/chat`; `GET /api/chat/options` exposes the configured model choices.
+This repository is a TypeScript monorepo for an OpenAI chat API playground. It contains a React/Vite frontend and an Express backend. The main page sends Chat Completions requests through `POST /api/chat`, using SSE streaming by default with complete responses as an option; `GET /api/chat/options` exposes the configured model choices.
 
 ## Repository layout
 
@@ -39,4 +39,4 @@ Use `npm run test:watch --workspace frontend` or `npm run test:watch --workspace
 
 ## Local development
 
-Vite proxies `/api` to `http://localhost:3001`. The backend reads `PORT` from the environment and otherwise uses port 3001. Copy `.env.example` to `backend/.env` and configure `OPENAI_API_KEY` before chatting. `OPENAI_MODELS` is a comma-separated allowlist whose first entry is the default; it falls back to `gpt-4o-mini`. `OPENAI_BASE_URL` can target a compatible provider. Never expose provider credentials to the frontend.
+Vite proxies `/api` to `http://localhost:3001`. The backend reads `PORT` from the environment and otherwise uses port 3001. Copy `.env.example` to `backend/.env` and configure `OPENAI_API_KEY` before chatting. `OPENAI_MODELS` is a comma-separated allowlist whose first entry is the default; it falls back to `gpt-4o-mini`. `OPENAI_BASE_URL` can target a compatible provider. Streaming responses use `delta`, `done`, and `error` SSE events. Never expose provider credentials to the frontend.

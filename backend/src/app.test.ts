@@ -38,6 +38,7 @@ describe('API application', () => {
       .send({
         messages: [{ content: 'Hello', role: 'user' }],
         model: 'alternate-model',
+        stream: false,
       });
 
     expect(response.status).toBe(200);
@@ -50,11 +51,65 @@ describe('API application', () => {
     );
   });
 
+  it('streams chat response chunks from the selected model', async () => {
+    const streamChat = vi.fn().mockResolvedValue({
+      stream: (async function* () {
+        yield 'Hello ';
+        yield 'as it arrives.';
+      })(),
+    });
+    const response = await request(createApp({ models, streamChat }))
+      .post('/api/chat')
+      .send({
+        messages: [{ content: 'Hello', role: 'user' }],
+        model: 'alternate-model',
+        stream: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('text/event-stream');
+    expect(response.text).toBe(
+      'data: {"content":"Hello ","type":"delta"}\n\n' +
+        'data: {"content":"as it arrives.","type":"delta"}\n\n' +
+        'data: {"type":"done"}\n\n',
+    );
+    expect(streamChat).toHaveBeenCalledWith(
+      [{ content: 'Hello', role: 'user' }],
+      'alternate-model',
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('sends provider errors through an active response stream', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const streamChat = vi.fn().mockResolvedValue({
+      stream: (async function* () {
+        yield 'Partial response.';
+        throw new Error('The stream stopped.');
+      })(),
+    });
+    const response = await request(createApp({ models, streamChat }))
+      .post('/api/chat')
+      .send({
+        messages: [{ content: 'Hello', role: 'user' }],
+        model: 'default-model',
+        stream: true,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain(
+      'data: {"content":"Partial response.","type":"delta"}\n\n',
+    );
+    expect(response.text).toContain(
+      'data: {"error":"The stream stopped.","type":"error"}\n\n',
+    );
+  });
+
   it('rejects an invalid chat request', async () => {
     const completeChat = vi.fn();
     const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({ messages: [], model: 'default-model' });
+      .send({ messages: [], model: 'default-model', stream: false });
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid chat request.' });
@@ -68,6 +123,7 @@ describe('API application', () => {
       .send({
         messages: [{ content: 'Hello', role: 'user' }],
         model: 'unknown-model',
+        stream: false,
       });
 
     expect(response.status).toBe(400);
@@ -85,6 +141,7 @@ describe('API application', () => {
       .send({
         messages: [{ content: 'Hello', role: 'user' }],
         model: 'default-model',
+        stream: false,
       });
 
     expect(response.status).toBe(502);

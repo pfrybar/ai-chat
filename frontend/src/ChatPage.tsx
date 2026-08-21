@@ -1,7 +1,10 @@
 import {
   type FormEvent,
   type KeyboardEvent,
+  type PointerEvent,
+  type WheelEvent,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -29,6 +32,11 @@ interface ChatOptionsResponse extends ApiErrorResponse {
   defaultModel?: unknown;
   models?: unknown;
 }
+
+type ChatStreamEvent =
+  | { type: 'delta'; content: string }
+  | { type: 'done' }
+  | { type: 'error'; error: string };
 
 function formatApiError(error: string, details?: string) {
   return [error, details].filter(Boolean).join('\n\n');
@@ -58,16 +66,100 @@ async function readApiResponse<T extends object>(
   );
 }
 
+async function consumeChatStream(
+  response: Response,
+  onDelta: (content: string) => void,
+) {
+  if (!response.body) {
+    throw new Error('The API did not provide a response stream.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let streamCompleted = false;
+
+  function processFrame(frame: string) {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice('data:'.length).trimStart())
+      .join('\n');
+
+    if (!data) {
+      return;
+    }
+
+    let parsedEvent: unknown;
+
+    try {
+      parsedEvent = JSON.parse(data);
+    } catch {
+      throw new Error('The API returned an invalid streaming response.');
+    }
+
+    if (
+      typeof parsedEvent !== 'object' ||
+      parsedEvent === null ||
+      !('type' in parsedEvent)
+    ) {
+      throw new Error('The API returned an invalid streaming event.');
+    }
+
+    const event = parsedEvent as ChatStreamEvent;
+
+    if (event.type === 'delta' && typeof event.content === 'string') {
+      onDelta(event.content);
+    } else if (event.type === 'error' && typeof event.error === 'string') {
+      throw new Error(event.error);
+    } else if (event.type === 'done') {
+      streamCompleted = true;
+    } else {
+      throw new Error('The API returned an invalid streaming event.');
+    }
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+
+      const frames = buffer.split(/\r?\n\r?\n/);
+      buffer = frames.pop() ?? '';
+
+      for (const frame of frames) {
+        processFrame(frame);
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    if (buffer.trim()) {
+      processFrame(buffer);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!streamCompleted) {
+    throw new Error('The API ended the response before completing the stream.');
+  }
+}
+
 export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streaming, setStreaming] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [isOptionsLoading, setIsOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -125,13 +217,16 @@ export function ChatPage() {
     return () => abortController.abort();
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const messageList = messageListRef.current;
 
-    if (messageList) {
-      messageList.scrollTop = messageList.scrollHeight;
+    if (messageList && shouldAutoScrollRef.current) {
+      messageList.scrollTop = Math.max(
+        0,
+        messageList.scrollHeight - messageList.clientHeight,
+      );
     }
-  }, [isLoading, messages]);
+  }, [messages]);
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,6 +242,7 @@ export function ChatPage() {
       { content, role: 'user' },
     ];
 
+    shouldAutoScrollRef.current = true;
     setMessages(nextMessages);
     setDraft('');
     setError(null);
@@ -154,13 +250,18 @@ export function ChatPage() {
 
     try {
       const response = await fetch('/api/chat', {
-        body: JSON.stringify({ messages: nextMessages, model: selectedModel }),
+        body: JSON.stringify({
+          messages: nextMessages,
+          model: selectedModel,
+          stream: streaming,
+        }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });
-      const data = await readApiResponse<ChatResponse>(response);
 
       if (!response.ok) {
+        const data = await readApiResponse<ChatResponse>(response);
+
         throw new Error(
           formatApiError(
             data.error ?? `The API returned status ${response.status}.`,
@@ -169,16 +270,21 @@ export function ChatPage() {
         );
       }
 
-      const assistantContent = data.message?.content;
+      if (streaming) {
+        await consumeChatStream(response, appendAssistantDelta);
+      } else {
+        const data = await readApiResponse<ChatResponse>(response);
+        const assistantContent = data.message?.content;
 
-      if (!assistantContent) {
-        throw new Error('The API returned an empty response.');
+        if (!assistantContent) {
+          throw new Error('The API returned an empty response.');
+        }
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          { content: assistantContent, role: 'assistant' },
+        ]);
       }
-
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        { content: assistantContent, role: 'assistant' },
-      ]);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -188,6 +294,57 @@ export function ChatPage() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function appendAssistantDelta(delta: string) {
+    setMessages((currentMessages) => {
+      const lastMessage = currentMessages[currentMessages.length - 1];
+
+      if (lastMessage?.role === 'assistant') {
+        return [
+          ...currentMessages.slice(0, -1),
+          { ...lastMessage, content: lastMessage.content + delta },
+        ];
+      }
+
+      return [...currentMessages, { content: delta, role: 'assistant' }];
+    });
+  }
+
+  function handleConversationScroll() {
+    const messageList = messageListRef.current;
+
+    if (!messageList) {
+      return;
+    }
+
+    const distanceFromBottom =
+      messageList.scrollHeight -
+      messageList.scrollTop -
+      messageList.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom <= 2;
+  }
+
+  function handleConversationWheel(event: WheelEvent<HTMLDivElement>) {
+    if (event.deltaY < 0) {
+      shouldAutoScrollRef.current = false;
+    }
+  }
+
+  function handleConversationPointerDown(event: PointerEvent<HTMLDivElement>) {
+    const messageList = event.currentTarget;
+    const bounds = messageList.getBoundingClientRect();
+    const isUsingScrollbar =
+      messageList.scrollHeight > messageList.clientHeight &&
+      event.clientX >= bounds.right - 20;
+
+    if (isUsingScrollbar) {
+      shouldAutoScrollRef.current = false;
+    }
+  }
+
+  function pauseAutoScroll() {
+    shouldAutoScrollRef.current = false;
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -208,7 +365,9 @@ export function ChatPage() {
               Send a message using the Chat Completions API.
             </p>
           </div>
-          <span className="api-badge">Complete response</span>
+          <span className="api-badge">
+            {streaming ? 'Streaming' : 'Complete response'}
+          </span>
         </header>
 
         <section className="chat-options" aria-labelledby="options-title">
@@ -235,6 +394,20 @@ export function ChatPage() {
               ))}
             </select>
           </label>
+          <label className="chat-option" htmlFor="response-delivery">
+            <span>Response delivery</span>
+            <select
+              disabled={isLoading}
+              id="response-delivery"
+              onChange={(event) =>
+                setStreaming(event.target.value === 'stream')
+              }
+              value={streaming ? 'stream' : 'complete'}
+            >
+              <option value="stream">Streaming</option>
+              <option value="complete">Complete</option>
+            </select>
+          </label>
           {optionsError && (
             <p className="options-error" role="alert">
               {optionsError}
@@ -246,6 +419,10 @@ export function ChatPage() {
           className="chat-messages"
           aria-label="Conversation"
           aria-live="polite"
+          onPointerDown={handleConversationPointerDown}
+          onScroll={handleConversationScroll}
+          onTouchStart={pauseAutoScroll}
+          onWheel={handleConversationWheel}
           ref={messageListRef}
         >
           {messages.length === 0 && !isLoading && (
@@ -278,7 +455,7 @@ export function ChatPage() {
             </article>
           ))}
 
-          {isLoading && (
+          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
             <article className="chat-message assistant" role="status">
               <span className="message-role">Assistant</span>
               <p className="thinking">Thinking…</p>

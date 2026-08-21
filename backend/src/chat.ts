@@ -12,6 +12,10 @@ export interface ChatResult {
   content: string;
 }
 
+export interface ChatStreamResult {
+  stream: AsyncIterable<string>;
+}
+
 function createClient() {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -52,4 +56,32 @@ export async function completeChat(
   }
 
   return { content };
+}
+
+export async function streamChat(
+  messages: ChatMessage[],
+  model: string,
+  signal?: AbortSignal,
+): Promise<ChatStreamResult> {
+  const client = createClient();
+  const completionStream = await client.chat.completions.create(
+    {
+      messages: messages as ChatCompletionMessageParam[],
+      model,
+      stream: true,
+    },
+    { signal },
+  );
+
+  return {
+    stream: (async function* () {
+      for await (const chunk of completionStream) {
+        const content = chunk.choices[0]?.delta.content;
+
+        if (content) {
+          yield content;
+        }
+      }
+    })(),
+  };
 }
