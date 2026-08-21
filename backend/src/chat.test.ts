@@ -37,24 +37,25 @@ describe('Chat Completions client', () => {
     expect(getChatModels()).toEqual(['gpt-4o-mini']);
   });
 
-  it('returns a completion from the selected model', async () => {
+  it('returns a completion with the selected reasoning effort', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     createCompletion.mockResolvedValue({
       choices: [{ message: { content: 'Hello from the model.' } }],
     });
 
     await expect(
-      completeChat([{ content: 'Hello', role: 'user' }], 'test-model'),
+      completeChat([{ content: 'Hello', role: 'user' }], 'test-model', 'high'),
     ).resolves.toEqual({
       content: 'Hello from the model.',
     });
     expect(createCompletion).toHaveBeenCalledWith({
       messages: [{ content: 'Hello', role: 'user' }],
       model: 'test-model',
+      reasoning_effort: 'high',
     });
   });
 
-  it('streams completion content from the selected model', async () => {
+  it('streams completion content with the selected reasoning effort', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     const signal = new AbortController().signal;
     createCompletion.mockResolvedValue(
@@ -68,6 +69,7 @@ describe('Chat Completions client', () => {
     const result = await streamChat(
       [{ content: 'Hello', role: 'user' }],
       'stream-model',
+      'low',
       signal,
     );
     const chunks: string[] = [];
@@ -81,6 +83,7 @@ describe('Chat Completions client', () => {
       {
         messages: [{ content: 'Hello', role: 'user' }],
         model: 'stream-model',
+        reasoning_effort: 'low',
         stream: true,
       },
       { signal },
@@ -89,7 +92,7 @@ describe('Chat Completions client', () => {
 
   it('requires an API key', async () => {
     await expect(
-      completeChat([{ content: 'Hello', role: 'user' }], 'test-model'),
+      completeChat([{ content: 'Hello', role: 'user' }], 'test-model', null),
     ).rejects.toThrow('OPENAI_API_KEY is not configured.');
     expect(OpenAIClient).not.toHaveBeenCalled();
   });
@@ -101,7 +104,11 @@ describe('Chat Completions client', () => {
     });
 
     await expect(
-      completeChat([{ content: 'Hello', role: 'user' }], 'test-model'),
+      completeChat([{ content: 'Hello', role: 'user' }], 'test-model', null),
     ).rejects.toThrow('The model returned an empty response.');
+    expect(createCompletion).toHaveBeenCalledWith({
+      messages: [{ content: 'Hello', role: 'user' }],
+      model: 'test-model',
+    });
   });
 });

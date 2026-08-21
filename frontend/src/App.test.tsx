@@ -106,13 +106,14 @@ describe('App', () => {
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
     expect(screen.getByLabelText('API')).toHaveValue('chat');
+    expect(screen.getByLabelText('Reasoning effort')).toHaveValue('');
   });
 
-  it('restores API, model, and delivery options from the query parameters', async () => {
+  it('restores API, model, reasoning, and delivery options from the query parameters', async () => {
     window.history.replaceState(
       null,
       '',
-      '/?api=responses&model=alternate-model&delivery=complete',
+      '/?api=responses&model=alternate-model&reasoning=high&delivery=complete',
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
@@ -122,6 +123,7 @@ describe('App', () => {
       expect(screen.getByLabelText('Model')).toHaveValue('alternate-model'),
     );
     expect(screen.getByLabelText('API')).toHaveValue('responses');
+    expect(screen.getByLabelText('Reasoning effort')).toHaveValue('high');
     expect(screen.getByLabelText('Response delivery')).toHaveValue('complete');
   });
 
@@ -140,6 +142,9 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Model'), {
       target: { value: 'alternate-model' },
     });
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), {
+      target: { value: 'xhigh' },
+    });
     fireEvent.change(screen.getByLabelText('Response delivery'), {
       target: { value: 'complete' },
     });
@@ -147,8 +152,43 @@ describe('App', () => {
     const query = new URLSearchParams(window.location.search);
     expect(query.get('api')).toBe('responses');
     expect(query.get('model')).toBe('alternate-model');
+    expect(query.get('reasoning')).toBe('xhigh');
     expect(query.get('delivery')).toBe('complete');
     expect(query.get('source')).toBe('test');
+  });
+
+  it('limits reasoning efforts to those supported by the selected API', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+
+    expect(
+      screen.queryByRole('option', { name: 'Minimal' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: 'Max' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
+    expect(screen.getByRole('option', { name: 'Minimal' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Max' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), {
+      target: { value: 'max' },
+    });
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'chat' },
+    });
+
+    expect(screen.getByLabelText('Reasoning effort')).toHaveValue('');
+    expect(new URLSearchParams(window.location.search).has('reasoning')).toBe(
+      false,
+    );
   });
 
   it('changes models between turns while preserving conversation history', async () => {
@@ -218,6 +258,9 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('API'), {
       target: { value: 'responses' },
     });
+    fireEvent.change(screen.getByLabelText('Reasoning effort'), {
+      target: { value: 'high' },
+    });
     const input = screen.getByLabelText('Message');
 
     fireEvent.change(input, { target: { value: 'Hello' } });
@@ -233,6 +276,7 @@ describe('App', () => {
           api: 'responses',
           messages: [{ content: 'Hello', role: 'user' }],
           model: 'default-model',
+          reasoningEffort: 'high',
           stream: true,
         }),
       }),

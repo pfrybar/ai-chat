@@ -1,6 +1,11 @@
 import type { ResponseInput } from 'openai/resources/responses/responses';
 
-import type { ChatMessage, ChatResult, ChatStreamResult } from './chat.js';
+import type {
+  ChatMessage,
+  ChatResult,
+  ChatStreamResult,
+  ReasoningEffort,
+} from './chat.js';
 import { createOpenAIClient } from './openai.js';
 
 function toResponseInput(messages: ChatMessage[]): ResponseInput {
@@ -10,11 +15,13 @@ function toResponseInput(messages: ChatMessage[]): ResponseInput {
 export async function completeResponse(
   messages: ChatMessage[],
   model: string,
+  reasoningEffort: ReasoningEffort | null,
 ): Promise<ChatResult> {
   const client = createOpenAIClient();
   const response = await client.responses.create({
     input: toResponseInput(messages),
     model,
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     store: false,
   });
   const content = response.output_text;
@@ -29,6 +36,7 @@ export async function completeResponse(
 export async function streamResponse(
   messages: ChatMessage[],
   model: string,
+  reasoningEffort: ReasoningEffort | null,
   signal?: AbortSignal,
 ): Promise<ChatStreamResult> {
   const client = createOpenAIClient();
@@ -36,6 +44,7 @@ export async function streamResponse(
     {
       input: toResponseInput(messages),
       model,
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
       store: false,
       stream: true,
     },

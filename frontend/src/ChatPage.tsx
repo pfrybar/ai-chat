@@ -12,6 +12,25 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type ChatApi = 'chat' | 'responses';
+type ReasoningEffort =
+  'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+const reasoningEfforts = new Set<ReasoningEffort>([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
+const chatReasoningEfforts = new Set<ReasoningEffort>([
+  'none',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]);
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -49,6 +68,23 @@ function getInitialApiOption(): ChatApi {
     : 'chat';
 }
 
+function getInitialReasoningEffort(): ReasoningEffort | null {
+  const reasoningEffort = new URLSearchParams(window.location.search).get(
+    'reasoning',
+  );
+
+  if (!reasoningEfforts.has(reasoningEffort as ReasoningEffort)) {
+    return null;
+  }
+
+  const selectedEffort = reasoningEffort as ReasoningEffort;
+
+  return getInitialApiOption() === 'responses' ||
+    chatReasoningEfforts.has(selectedEffort)
+    ? selectedEffort
+    : null;
+}
+
 function getInitialStreamingOption() {
   return (
     new URLSearchParams(window.location.search).get('delivery') !== 'complete'
@@ -56,11 +92,16 @@ function getInitialStreamingOption() {
 }
 
 function setOptionQueryParameter(
-  name: 'api' | 'delivery' | 'model',
-  value: string,
+  name: 'api' | 'delivery' | 'model' | 'reasoning',
+  value: string | null,
 ) {
   const url = new URL(window.location.href);
-  url.searchParams.set(name, value);
+
+  if (value === null) {
+    url.searchParams.delete(name);
+  } else {
+    url.searchParams.set(name, value);
+  }
   window.history.replaceState(
     window.history.state,
     '',
@@ -179,6 +220,8 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [reasoningEffort, setReasoningEffort] =
+    useState<ReasoningEffort | null>(getInitialReasoningEffort);
   const [streaming, setStreaming] = useState(getInitialStreamingOption);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
@@ -289,6 +332,7 @@ export function ChatPage() {
           api,
           messages: nextMessages,
           model: selectedModel,
+          ...(reasoningEffort ? { reasoningEffort } : {}),
           stream: streaming,
         }),
         headers: { 'Content-Type': 'application/json' },
@@ -350,11 +394,26 @@ export function ChatPage() {
   function handleApiChange(nextApi: ChatApi) {
     setApi(nextApi);
     setOptionQueryParameter('api', nextApi);
+
+    if (
+      nextApi === 'chat' &&
+      reasoningEffort !== null &&
+      !chatReasoningEfforts.has(reasoningEffort)
+    ) {
+      handleReasoningEffortChange(null);
+    }
   }
 
   function handleModelChange(model: string) {
     setSelectedModel(model);
     setOptionQueryParameter('model', model);
+  }
+
+  function handleReasoningEffortChange(
+    nextReasoningEffort: ReasoningEffort | null,
+  ) {
+    setReasoningEffort(nextReasoningEffort);
+    setOptionQueryParameter('reasoning', nextReasoningEffort);
   }
 
   function handleDeliveryChange(delivery: 'complete' | 'stream') {
@@ -455,6 +514,30 @@ export function ChatPage() {
             >
               <option value="chat">Chat Completions</option>
               <option value="responses">Responses</option>
+            </select>
+          </label>
+          <label className="chat-option" htmlFor="reasoning-effort">
+            <span>Reasoning effort</span>
+            <select
+              disabled={isLoading}
+              id="reasoning-effort"
+              onChange={(event) =>
+                handleReasoningEffortChange(
+                  event.target.value
+                    ? (event.target.value as ReasoningEffort)
+                    : null,
+                )
+              }
+              value={reasoningEffort ?? ''}
+            >
+              <option value="">Default</option>
+              <option value="none">None</option>
+              {api === 'responses' && <option value="minimal">Minimal</option>}
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">Xhigh</option>
+              {api === 'responses' && <option value="max">Max</option>}
             </select>
           </label>
           <label className="chat-option" htmlFor="response-delivery">

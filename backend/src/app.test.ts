@@ -36,13 +36,23 @@ describe('API application', () => {
       .mockResolvedValue({ content: 'Chat response.' });
     const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({ api: 'chat', messages, model: 'alternate-model', stream: false });
+      .send({
+        api: 'chat',
+        messages,
+        model: 'alternate-model',
+        reasoningEffort: 'high',
+        stream: false,
+      });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       message: { content: 'Chat response.', role: 'assistant' },
     });
-    expect(completeChat).toHaveBeenCalledWith(messages, 'alternate-model');
+    expect(completeChat).toHaveBeenCalledWith(
+      messages,
+      'alternate-model',
+      'high',
+    );
   });
 
   it('streams Chat Completions response chunks', async () => {
@@ -54,7 +64,13 @@ describe('API application', () => {
     });
     const response = await request(createApp({ models, streamChat }))
       .post('/api/chat')
-      .send({ api: 'chat', messages, model: 'alternate-model', stream: true });
+      .send({
+        api: 'chat',
+        messages,
+        model: 'alternate-model',
+        reasoningEffort: 'low',
+        stream: true,
+      });
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
@@ -66,6 +82,7 @@ describe('API application', () => {
     expect(streamChat).toHaveBeenCalledWith(
       messages,
       'alternate-model',
+      'low',
       expect.any(AbortSignal),
     );
   });
@@ -80,6 +97,7 @@ describe('API application', () => {
         api: 'responses',
         messages,
         model: 'alternate-model',
+        reasoningEffort: 'minimal',
         stream: false,
       });
 
@@ -87,7 +105,11 @@ describe('API application', () => {
     expect(response.body).toEqual({
       message: { content: 'Responses response.', role: 'assistant' },
     });
-    expect(completeResponse).toHaveBeenCalledWith(messages, 'alternate-model');
+    expect(completeResponse).toHaveBeenCalledWith(
+      messages,
+      'alternate-model',
+      'minimal',
+    );
   });
 
   it('streams Responses API response chunks', async () => {
@@ -103,6 +125,7 @@ describe('API application', () => {
         api: 'responses',
         messages,
         model: 'alternate-model',
+        reasoningEffort: 'low',
         stream: true,
       });
 
@@ -116,6 +139,7 @@ describe('API application', () => {
     expect(streamResponse).toHaveBeenCalledWith(
       messages,
       'alternate-model',
+      'low',
       expect.any(AbortSignal),
     );
   });
@@ -165,6 +189,38 @@ describe('API application', () => {
         api: 'unknown',
         messages,
         model: 'default-model',
+        stream: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects reasoning efforts unsupported by Chat Completions', async () => {
+    const completeChat = vi.fn();
+    const response = await request(createApp({ completeChat, models }))
+      .post('/api/chat')
+      .send({
+        api: 'chat',
+        messages,
+        model: 'default-model',
+        reasoningEffort: 'minimal',
+        stream: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported reasoning effort', async () => {
+    const completeChat = vi.fn();
+    const response = await request(createApp({ completeChat, models }))
+      .post('/api/chat')
+      .send({
+        api: 'chat',
+        messages,
+        model: 'default-model',
+        reasoningEffort: 'extreme',
         stream: false,
       });
 

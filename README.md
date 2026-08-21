@@ -2,7 +2,7 @@
 
 A TypeScript frontend/backend project for experimenting with OpenAI chat APIs and their options.
 
-The main page provides a chat interface backed by OpenAI's Chat Completions and Responses APIs. Both APIs stream into the conversation by default, with complete JSON responses available as a playground option. Each request includes the conversation history, and the options panel can switch APIs or models on any turn. API, model, and delivery selections are stored in the page query parameters so they survive reloads and can be shared.
+The main page provides a chat interface backed by OpenAI's Chat Completions and Responses APIs. Both APIs stream into the conversation by default, with complete JSON responses available as a playground option. Each request includes the conversation history, and the options panel can switch APIs, models, or reasoning effort on any turn. API, model, reasoning, and delivery selections are stored in the page query parameters so they survive reloads and can be shared.
 
 The project includes:
 
@@ -28,6 +28,15 @@ npm run dev
 The frontend runs at <http://localhost:5173> and proxies `/api` requests to the backend at <http://localhost:3001>.
 
 Set `OPENAI_MODELS` to a comma-separated list of available models. The first model is selected by default; when unset, the application uses `gpt-4o-mini`. Set `OPENAI_BASE_URL` to use a compatible provider endpoint.
+
+## Reasoning models
+
+Reasoning effort is currently tested with `gpt-5.6` models, which are reasoning models. It will not work with models that do not support reasoning; choose **Default** for those models so no reasoning effort is sent.
+
+The available efforts differ by API:
+
+- Chat Completions: `none`, `low`, `medium`, `high`, and `xhigh`.
+- Responses: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
 
 ## Commands
 

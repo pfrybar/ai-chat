@@ -110,7 +110,10 @@ textarea:focus-visible {
 }
 
 .chat-options-heading {
-  min-width: 9rem;
+  display: flex;
+  flex: 0 0 100%;
+  align-items: baseline;
+  gap: 0.75rem;
 }
 
 .chat-options-heading h2 {
@@ -121,7 +124,7 @@ textarea:focus-visible {
 }
 
 .chat-options-heading p {
-  margin: 0.2rem 0 0;
+  margin: 0;
   color: #6b7280;
   font-size: 0.72rem;
 }
@@ -435,6 +438,7 @@ textarea:focus-visible {
   }
 
   .chat-option {
+    min-width: 8rem;
     max-width: none;
   }
 

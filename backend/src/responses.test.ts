@@ -24,23 +24,28 @@ describe('Responses API client', () => {
     vi.clearAllMocks();
   });
 
-  it('returns a complete response from the selected model', async () => {
+  it('returns a complete response with the selected reasoning effort', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     createResponse.mockResolvedValue({
       output_text: 'Hello from the Responses API.',
     });
 
     await expect(
-      completeResponse([{ content: 'Hello', role: 'user' }], 'test-model'),
+      completeResponse(
+        [{ content: 'Hello', role: 'user' }],
+        'test-model',
+        'high',
+      ),
     ).resolves.toEqual({ content: 'Hello from the Responses API.' });
     expect(createResponse).toHaveBeenCalledWith({
       input: [{ content: 'Hello', role: 'user' }],
       model: 'test-model',
+      reasoning: { effort: 'high' },
       store: false,
     });
   });
 
-  it('streams response text from the selected model', async () => {
+  it('streams response text with the selected reasoning effort', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     const signal = new AbortController().signal;
     createResponse.mockResolvedValue(
@@ -54,6 +59,7 @@ describe('Responses API client', () => {
     const result = await streamResponse(
       [{ content: 'Hello', role: 'user' }],
       'test-model',
+      'low',
       signal,
     );
     const chunks: string[] = [];
@@ -67,6 +73,7 @@ describe('Responses API client', () => {
       {
         input: [{ content: 'Hello', role: 'user' }],
         model: 'test-model',
+        reasoning: { effort: 'low' },
         store: false,
         stream: true,
       },
@@ -79,7 +86,16 @@ describe('Responses API client', () => {
     createResponse.mockResolvedValue({ output_text: '' });
 
     await expect(
-      completeResponse([{ content: 'Hello', role: 'user' }], 'test-model'),
+      completeResponse(
+        [{ content: 'Hello', role: 'user' }],
+        'test-model',
+        null,
+      ),
     ).rejects.toThrow('The model returned an empty response.');
+    expect(createResponse).toHaveBeenCalledWith({
+      input: [{ content: 'Hello', role: 'user' }],
+      model: 'test-model',
+      store: false,
+    });
   });
 });

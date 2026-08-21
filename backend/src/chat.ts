@@ -3,6 +3,8 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { createOpenAIClient } from './openai.js';
 
 export type ChatRole = 'system' | 'user' | 'assistant';
+export type ReasoningEffort =
+  'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface ChatMessage {
   role: ChatRole;
@@ -31,11 +33,13 @@ export function getChatModels() {
 export async function completeChat(
   messages: ChatMessage[],
   model: string,
+  reasoningEffort: ReasoningEffort | null,
 ): Promise<ChatResult> {
   const client = createOpenAIClient();
   const completion = await client.chat.completions.create({
     messages: messages as ChatCompletionMessageParam[],
     model,
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   });
   const content = completion.choices[0]?.message.content;
 
@@ -49,6 +53,7 @@ export async function completeChat(
 export async function streamChat(
   messages: ChatMessage[],
   model: string,
+  reasoningEffort: ReasoningEffort | null,
   signal?: AbortSignal,
 ): Promise<ChatStreamResult> {
   const client = createOpenAIClient();
@@ -56,6 +61,7 @@ export async function streamChat(
     {
       messages: messages as ChatCompletionMessageParam[],
       model,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       stream: true,
     },
     { signal },

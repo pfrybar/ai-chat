@@ -8,11 +8,28 @@ import {
   type ChatResult,
   type ChatRole,
   type ChatStreamResult,
+  type ReasoningEffort,
 } from './chat.js';
 import { completeResponse, streamResponse } from './responses.js';
 
 const validRoles = new Set<ChatRole>(['system', 'user', 'assistant']);
 const validApis = new Set<ChatApi>(['chat', 'responses']);
+const validReasoningEfforts = new Set<ReasoningEffort>([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
+const validChatReasoningEfforts = new Set<ReasoningEffort>([
+  'none',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]);
 const maxMessages = 50;
 const maxMessageLength = 50_000;
 const requestBodyLimit = '128kb';
@@ -21,10 +38,12 @@ type ChatApi = 'chat' | 'responses';
 type CompleteService = (
   messages: ChatMessage[],
   model: string,
+  reasoningEffort: ReasoningEffort | null,
 ) => Promise<ChatResult>;
 type StreamService = (
   messages: ChatMessage[],
   model: string,
+  reasoningEffort: ReasoningEffort | null,
   signal?: AbortSignal,
 ) => Promise<ChatStreamResult>;
 
@@ -72,6 +91,23 @@ function parseMessages(value: unknown): ChatMessage[] | null {
   }
 
   return messages;
+}
+
+function parseReasoningEffort(
+  value: unknown,
+): ReasoningEffort | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (
+    typeof value !== 'string' ||
+    !validReasoningEfforts.has(value as ReasoningEffort)
+  ) {
+    return undefined;
+  }
+
+  return value as ReasoningEffort;
 }
 
 function getErrorMessage(error: unknown) {
@@ -198,6 +234,9 @@ export function createApp(options: AppOptions = {}) {
       : null;
     const api = isRecord(request.body) ? request.body.api : null;
     const model = isRecord(request.body) ? request.body.model : null;
+    const reasoningEffort = isRecord(request.body)
+      ? parseReasoningEffort(request.body.reasoningEffort)
+      : undefined;
     const stream = isRecord(request.body) ? request.body.stream : null;
 
     if (
@@ -206,6 +245,10 @@ export function createApp(options: AppOptions = {}) {
       !validApis.has(api as ChatApi) ||
       typeof model !== 'string' ||
       !models.includes(model) ||
+      reasoningEffort === undefined ||
+      (api === 'chat' &&
+        reasoningEffort !== null &&
+        !validChatReasoningEfforts.has(reasoningEffort)) ||
       typeof stream !== 'boolean'
     ) {
       response.status(400).json({ error: 'Invalid chat request.' });
@@ -221,8 +264,8 @@ export function createApp(options: AppOptions = {}) {
         response,
         (signal) =>
           chatApi === 'chat'
-            ? services.streamChat(messages, model, signal)
-            : services.streamResponse(messages, model, signal),
+            ? services.streamChat(messages, model, reasoningEffort, signal)
+            : services.streamResponse(messages, model, reasoningEffort, signal),
         logLabel,
       );
       return;
@@ -232,8 +275,8 @@ export function createApp(options: AppOptions = {}) {
       response,
       () =>
         chatApi === 'chat'
-          ? services.completeChat(messages, model)
-          : services.completeResponse(messages, model),
+          ? services.completeChat(messages, model, reasoningEffort)
+          : services.completeResponse(messages, model, reasoningEffort),
       logLabel,
     );
   });
