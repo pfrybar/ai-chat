@@ -93,7 +93,7 @@ describe('App', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows the chat interface and selects the default model', async () => {
+  it('shows the chat interface with the default options', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
     render(<App />);
@@ -105,13 +105,14 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
+    expect(screen.getByLabelText('API')).toHaveValue('chat');
   });
 
-  it('restores model and delivery options from the query parameters', async () => {
+  it('restores API, model, and delivery options from the query parameters', async () => {
     window.history.replaceState(
       null,
       '',
-      '/?model=alternate-model&delivery=complete',
+      '/?api=responses&model=alternate-model&delivery=complete',
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
@@ -120,6 +121,7 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Model')).toHaveValue('alternate-model'),
     );
+    expect(screen.getByLabelText('API')).toHaveValue('responses');
     expect(screen.getByLabelText('Response delivery')).toHaveValue('complete');
   });
 
@@ -132,6 +134,9 @@ describe('App', () => {
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
 
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
     fireEvent.change(screen.getByLabelText('Model'), {
       target: { value: 'alternate-model' },
     });
@@ -140,6 +145,7 @@ describe('App', () => {
     });
 
     const query = new URLSearchParams(window.location.search);
+    expect(query.get('api')).toBe('responses');
     expect(query.get('model')).toBe('alternate-model');
     expect(query.get('delivery')).toBe('complete');
     expect(query.get('source')).toBe('test');
@@ -165,6 +171,7 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith('/api/chat', {
       body: JSON.stringify({
+        api: 'chat',
         messages: [{ content: 'Hello', role: 'user' }],
         model: 'default-model',
         stream: true,
@@ -186,12 +193,46 @@ describe('App', () => {
       '/api/chat',
       expect.objectContaining({
         body: JSON.stringify({
+          api: 'chat',
           messages: [
             { content: 'Hello', role: 'user' },
             { content: 'Hello! How can I help?', role: 'assistant' },
             { content: 'Can you say more?', role: 'user' },
           ],
           model: 'alternate-model',
+          stream: true,
+        }),
+      }),
+    );
+  });
+
+  it('streams responses from the Responses API', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(streamResponse('Responses ', 'API result.'));
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'Hello' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(
+      await screen.findByText('Responses API result.'),
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/chat',
+      expect.objectContaining({
+        body: JSON.stringify({
+          api: 'responses',
+          messages: [{ content: 'Hello', role: 'user' }],
+          model: 'default-model',
           stream: true,
         }),
       }),
@@ -262,6 +303,9 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
     fireEvent.change(screen.getByLabelText('Response delivery'), {
       target: { value: 'complete' },
     });
@@ -275,6 +319,7 @@ describe('App', () => {
       '/api/chat',
       expect.objectContaining({
         body: JSON.stringify({
+          api: 'responses',
           messages: [{ content: 'Hello', role: 'user' }],
           model: 'default-model',
           stream: false,

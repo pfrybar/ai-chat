@@ -1,5 +1,6 @@
-import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+
+import { createOpenAIClient } from './openai.js';
 
 export type ChatRole = 'system' | 'user' | 'assistant';
 
@@ -14,19 +15,6 @@ export interface ChatResult {
 
 export interface ChatStreamResult {
   stream: AsyncIterable<string>;
-}
-
-function createClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY is not configured.');
-  }
-
-  return new OpenAI({
-    apiKey,
-    baseURL: process.env.OPENAI_BASE_URL || undefined,
-  });
 }
 
 export function getChatModels() {
@@ -44,7 +32,7 @@ export async function completeChat(
   messages: ChatMessage[],
   model: string,
 ): Promise<ChatResult> {
-  const client = createClient();
+  const client = createOpenAIClient();
   const completion = await client.chat.completions.create({
     messages: messages as ChatCompletionMessageParam[],
     model,
@@ -63,7 +51,7 @@ export async function streamChat(
   model: string,
   signal?: AbortSignal,
 ): Promise<ChatStreamResult> {
-  const client = createClient();
+  const client = createOpenAIClient();
   const completionStream = await client.chat.completions.create(
     {
       messages: messages as ChatCompletionMessageParam[],

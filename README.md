@@ -2,7 +2,7 @@
 
 A TypeScript frontend/backend project for experimenting with OpenAI chat APIs and their options.
 
-The main page provides a chat interface backed by OpenAI's Chat Completions API. Responses stream into the conversation by default, with complete JSON responses available as a playground option. Each request includes the conversation history, and the options panel can switch models on any turn. Model and delivery selections are stored in the page query parameters so they survive reloads and can be shared.
+The main page provides a chat interface backed by OpenAI's Chat Completions and Responses APIs. Both APIs stream into the conversation by default, with complete JSON responses available as a playground option. Each request includes the conversation history, and the options panel can switch APIs or models on any turn. API, model, and delivery selections are stored in the page query parameters so they survive reloads and can be shared.
 
 The project includes:
 

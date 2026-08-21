@@ -11,6 +11,8 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+type ChatApi = 'chat' | 'responses';
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -41,13 +43,22 @@ function formatApiError(error: string, details?: string) {
   return [error, details].filter(Boolean).join('\n\n');
 }
 
+function getInitialApiOption(): ChatApi {
+  return new URLSearchParams(window.location.search).get('api') === 'responses'
+    ? 'responses'
+    : 'chat';
+}
+
 function getInitialStreamingOption() {
   return (
     new URLSearchParams(window.location.search).get('delivery') !== 'complete'
   );
 }
 
-function setOptionQueryParameter(name: 'delivery' | 'model', value: string) {
+function setOptionQueryParameter(
+  name: 'api' | 'delivery' | 'model',
+  value: string,
+) {
   const url = new URL(window.location.href);
   url.searchParams.set(name, value);
   window.history.replaceState(
@@ -164,6 +175,7 @@ async function consumeChatStream(
 }
 
 export function ChatPage() {
+  const [api, setApi] = useState<ChatApi>(getInitialApiOption);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -274,6 +286,7 @@ export function ChatPage() {
     try {
       const response = await fetch('/api/chat', {
         body: JSON.stringify({
+          api,
           messages: nextMessages,
           model: selectedModel,
           stream: streaming,
@@ -332,6 +345,11 @@ export function ChatPage() {
 
       return [...currentMessages, { content: delta, role: 'assistant' }];
     });
+  }
+
+  function handleApiChange(nextApi: ChatApi) {
+    setApi(nextApi);
+    setOptionQueryParameter('api', nextApi);
   }
 
   function handleModelChange(model: string) {
@@ -395,7 +413,8 @@ export function ChatPage() {
             <p className="eyebrow">OPENAI CHAT PLAYGROUND</p>
             <h1 id="chat-title">Chat with an LLM.</h1>
             <p className="chat-intro">
-              Send a message using the Chat Completions API.
+              Send a message using the{' '}
+              {api === 'chat' ? 'Chat Completions API' : 'Responses API'}.
             </p>
           </div>
         </header>
@@ -405,6 +424,20 @@ export function ChatPage() {
             <h2 id="options-title">Options</h2>
             <p>Changes apply to the next response.</p>
           </div>
+          <label className="chat-option" htmlFor="chat-api">
+            <span>API</span>
+            <select
+              disabled={isLoading}
+              id="chat-api"
+              onChange={(event) =>
+                handleApiChange(event.target.value as ChatApi)
+              }
+              value={api}
+            >
+              <option value="chat">Chat Completions</option>
+              <option value="responses">Responses</option>
+            </select>
+          </label>
           <label className="chat-option" htmlFor="chat-model">
             <span>Model</span>
             <select

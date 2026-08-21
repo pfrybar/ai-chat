@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This repository is a TypeScript monorepo for an OpenAI chat API playground. It contains a React/Vite frontend and an Express backend. The main page sends Chat Completions requests through `POST /api/chat`, using SSE streaming by default with complete responses as an option; `GET /api/chat/options` exposes the configured model choices.
+This repository is a TypeScript monorepo for an OpenAI chat API playground. It contains a React/Vite frontend and an Express backend. The main page sends Chat Completions or Responses API requests through `POST /api/chat`, using SSE streaming by default with complete responses as an option; `GET /api/chat/options` exposes the configured model choices.
 
 ## Repository layout
 

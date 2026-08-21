@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 
 const models = ['default-model', 'alternate-model'];
+const messages = [{ content: 'Hello', role: 'user' as const }];
 
 describe('API application', () => {
   afterEach(() => {
@@ -29,39 +30,78 @@ describe('API application', () => {
     });
   });
 
-  it('returns a complete chat response from the selected model', async () => {
+  it('returns a complete Chat Completions response', async () => {
     const completeChat = vi
       .fn()
-      .mockResolvedValue({ content: 'Hello from the assistant.' });
+      .mockResolvedValue({ content: 'Chat response.' });
     const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
+      .send({ api: 'chat', messages, model: 'alternate-model', stream: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      message: { content: 'Chat response.', role: 'assistant' },
+    });
+    expect(completeChat).toHaveBeenCalledWith(messages, 'alternate-model');
+  });
+
+  it('streams Chat Completions response chunks', async () => {
+    const streamChat = vi.fn().mockResolvedValue({
+      stream: (async function* () {
+        yield 'Hello ';
+        yield 'from Chat Completions.';
+      })(),
+    });
+    const response = await request(createApp({ models, streamChat }))
+      .post('/api/chat')
+      .send({ api: 'chat', messages, model: 'alternate-model', stream: true });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('text/event-stream');
+    expect(response.text).toBe(
+      'data: {"content":"Hello ","type":"delta"}\n\n' +
+        'data: {"content":"from Chat Completions.","type":"delta"}\n\n' +
+        'data: {"type":"done"}\n\n',
+    );
+    expect(streamChat).toHaveBeenCalledWith(
+      messages,
+      'alternate-model',
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('returns a complete Responses API response', async () => {
+    const completeResponse = vi
+      .fn()
+      .mockResolvedValue({ content: 'Responses response.' });
+    const response = await request(createApp({ completeResponse, models }))
+      .post('/api/chat')
       .send({
-        messages: [{ content: 'Hello', role: 'user' }],
+        api: 'responses',
+        messages,
         model: 'alternate-model',
         stream: false,
       });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      message: { content: 'Hello from the assistant.', role: 'assistant' },
+      message: { content: 'Responses response.', role: 'assistant' },
     });
-    expect(completeChat).toHaveBeenCalledWith(
-      [{ content: 'Hello', role: 'user' }],
-      'alternate-model',
-    );
+    expect(completeResponse).toHaveBeenCalledWith(messages, 'alternate-model');
   });
 
-  it('streams chat response chunks from the selected model', async () => {
-    const streamChat = vi.fn().mockResolvedValue({
+  it('streams Responses API response chunks', async () => {
+    const streamResponse = vi.fn().mockResolvedValue({
       stream: (async function* () {
         yield 'Hello ';
-        yield 'as it arrives.';
+        yield 'from Responses.';
       })(),
     });
-    const response = await request(createApp({ models, streamChat }))
+    const response = await request(createApp({ models, streamResponse }))
       .post('/api/chat')
       .send({
-        messages: [{ content: 'Hello', role: 'user' }],
+        api: 'responses',
+        messages,
         model: 'alternate-model',
         stream: true,
       });
@@ -70,11 +110,11 @@ describe('API application', () => {
     expect(response.headers['content-type']).toContain('text/event-stream');
     expect(response.text).toBe(
       'data: {"content":"Hello ","type":"delta"}\n\n' +
-        'data: {"content":"as it arrives.","type":"delta"}\n\n' +
+        'data: {"content":"from Responses.","type":"delta"}\n\n' +
         'data: {"type":"done"}\n\n',
     );
-    expect(streamChat).toHaveBeenCalledWith(
-      [{ content: 'Hello', role: 'user' }],
+    expect(streamResponse).toHaveBeenCalledWith(
+      messages,
       'alternate-model',
       expect.any(AbortSignal),
     );
@@ -90,11 +130,7 @@ describe('API application', () => {
     });
     const response = await request(createApp({ models, streamChat }))
       .post('/api/chat')
-      .send({
-        messages: [{ content: 'Hello', role: 'user' }],
-        model: 'default-model',
-        stream: true,
-      });
+      .send({ api: 'chat', messages, model: 'default-model', stream: true });
 
     expect(response.status).toBe(200);
     expect(response.text).toContain(
@@ -109,10 +145,30 @@ describe('API application', () => {
     const completeChat = vi.fn();
     const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({ messages: [], model: 'default-model', stream: false });
+      .send({
+        api: 'chat',
+        messages: [],
+        model: 'default-model',
+        stream: false,
+      });
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid chat request.' });
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported API', async () => {
+    const completeChat = vi.fn();
+    const response = await request(createApp({ completeChat, models }))
+      .post('/api/chat')
+      .send({
+        api: 'unknown',
+        messages,
+        model: 'default-model',
+        stream: false,
+      });
+
+    expect(response.status).toBe(400);
     expect(completeChat).not.toHaveBeenCalled();
   });
 
@@ -120,11 +176,7 @@ describe('API application', () => {
     const completeChat = vi.fn();
     const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({
-        messages: [{ content: 'Hello', role: 'user' }],
-        model: 'unknown-model',
-        stream: false,
-      });
+      .send({ api: 'chat', messages, model: 'unknown-model', stream: false });
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid chat request.' });
@@ -138,11 +190,7 @@ describe('API application', () => {
       .mockRejectedValue(new Error('The model is unavailable.'));
     const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({
-        messages: [{ content: 'Hello', role: 'user' }],
-        model: 'default-model',
-        stream: false,
-      });
+      .send({ api: 'chat', messages, model: 'default-model', stream: false });
 
     expect(response.status).toBe(502);
     expect(response.body).toEqual({ error: 'The model is unavailable.' });

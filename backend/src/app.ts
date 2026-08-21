@@ -9,23 +9,31 @@ import {
   type ChatRole,
   type ChatStreamResult,
 } from './chat.js';
+import { completeResponse, streamResponse } from './responses.js';
 
 const validRoles = new Set<ChatRole>(['system', 'user', 'assistant']);
+const validApis = new Set<ChatApi>(['chat', 'responses']);
 const maxMessages = 50;
 const maxMessageLength = 50_000;
 const requestBodyLimit = '128kb';
 
+type ChatApi = 'chat' | 'responses';
+type CompleteService = (
+  messages: ChatMessage[],
+  model: string,
+) => Promise<ChatResult>;
+type StreamService = (
+  messages: ChatMessage[],
+  model: string,
+  signal?: AbortSignal,
+) => Promise<ChatStreamResult>;
+
 export interface AppOptions {
-  completeChat?: (
-    messages: ChatMessage[],
-    model: string,
-  ) => Promise<ChatResult>;
+  completeChat?: CompleteService;
+  completeResponse?: CompleteService;
   models?: string[];
-  streamChat?: (
-    messages: ChatMessage[],
-    model: string,
-    signal?: AbortSignal,
-  ) => Promise<ChatStreamResult>;
+  streamChat?: StreamService;
+  streamResponse?: StreamService;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -89,6 +97,7 @@ function sendEvent(
 async function streamToResponse(
   response: express.Response,
   createStream: (signal: AbortSignal) => Promise<ChatStreamResult>,
+  logLabel: string,
 ) {
   const abortController = new AbortController();
   const abortStream = () => abortController.abort();
@@ -127,7 +136,7 @@ async function streamToResponse(
       response.end();
     }
   } catch (error) {
-    console.error('Chat completion stream failed:', error);
+    console.error(`${logLabel} stream failed:`, error);
     const message = getErrorMessage(error);
 
     if (!response.headersSent) {
@@ -141,10 +150,33 @@ async function streamToResponse(
   }
 }
 
+async function completeToResponse(
+  response: express.Response,
+  complete: () => Promise<ChatResult>,
+  logLabel: string,
+) {
+  try {
+    const result = await complete();
+    response.json({
+      message: {
+        content: result.content,
+        role: 'assistant',
+      },
+    });
+  } catch (error) {
+    console.error(`${logLabel} failed:`, error);
+    response.status(502).json({ error: getErrorMessage(error) });
+  }
+}
+
 export function createApp(options: AppOptions = {}) {
   const app = express();
-  const createCompletion = options.completeChat ?? completeChat;
-  const createCompletionStream = options.streamChat ?? streamChat;
+  const services = {
+    completeChat: options.completeChat ?? completeChat,
+    completeResponse: options.completeResponse ?? completeResponse,
+    streamChat: options.streamChat ?? streamChat,
+    streamResponse: options.streamResponse ?? streamResponse,
+  };
   const models = options.models?.length
     ? [...new Set(options.models)]
     : getChatModels();
@@ -164,11 +196,14 @@ export function createApp(options: AppOptions = {}) {
     const messages = isRecord(request.body)
       ? parseMessages(request.body.messages)
       : null;
+    const api = isRecord(request.body) ? request.body.api : null;
     const model = isRecord(request.body) ? request.body.model : null;
     const stream = isRecord(request.body) ? request.body.stream : null;
 
     if (
       !messages ||
+      typeof api !== 'string' ||
+      !validApis.has(api as ChatApi) ||
       typeof model !== 'string' ||
       !models.includes(model) ||
       typeof stream !== 'boolean'
@@ -177,25 +212,30 @@ export function createApp(options: AppOptions = {}) {
       return;
     }
 
+    const chatApi = api as ChatApi;
+    const logLabel =
+      chatApi === 'chat' ? 'Chat completion' : 'Responses API request';
+
     if (stream) {
-      await streamToResponse(response, (signal) =>
-        createCompletionStream(messages, model, signal),
+      await streamToResponse(
+        response,
+        (signal) =>
+          chatApi === 'chat'
+            ? services.streamChat(messages, model, signal)
+            : services.streamResponse(messages, model, signal),
+        logLabel,
       );
       return;
     }
 
-    try {
-      const result = await createCompletion(messages, model);
-      response.json({
-        message: {
-          content: result.content,
-          role: 'assistant',
-        },
-      });
-    } catch (error) {
-      console.error('Chat completion failed:', error);
-      response.status(502).json({ error: getErrorMessage(error) });
-    }
+    await completeToResponse(
+      response,
+      () =>
+        chatApi === 'chat'
+          ? services.completeChat(messages, model)
+          : services.completeResponse(messages, model),
+      logLabel,
+    );
   });
 
   app.use(
