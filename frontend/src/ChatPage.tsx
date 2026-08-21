@@ -23,7 +23,6 @@ interface ApiErrorResponse {
 
 interface ChatResponse extends ApiErrorResponse {
   message?: {
-    role?: string;
     content?: string;
   };
 }
@@ -399,9 +398,6 @@ export function ChatPage() {
               Send a message using the Chat Completions API.
             </p>
           </div>
-          <span className="api-badge">
-            {streaming ? 'Streaming' : 'Complete response'}
-          </span>
         </header>
 
         <section className="chat-options" aria-labelledby="options-title">

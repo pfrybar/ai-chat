@@ -30,9 +30,7 @@ textarea {
 }
 
 button,
-select,
-textarea,
-.chat-card {
+.chat-composer {
   transition:
     border-color 150ms ease,
     box-shadow 150ms ease,
@@ -75,10 +73,6 @@ textarea:focus-visible {
 }
 
 .chat-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 2rem;
   padding: 2rem 2rem 1.5rem;
   border-bottom: 1px solid #263247;
 }
@@ -103,17 +97,6 @@ textarea:focus-visible {
   margin: 0.9rem 0 0;
   color: #9ca3af;
   line-height: 1.5;
-}
-
-.api-badge {
-  flex: none;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #1e4f87;
-  border-radius: 999px;
-  color: #bfdbfe;
-  background: #172554;
-  font-size: 0.76rem;
-  font-weight: 650;
 }
 
 .chat-options {
@@ -436,13 +419,7 @@ textarea:focus-visible {
   }
 
   .chat-header {
-    display: block;
     padding: 1.5rem 1rem 1.1rem;
-  }
-
-  .api-badge {
-    display: inline-block;
-    margin-top: 1rem;
   }
 
   .chat-options {
