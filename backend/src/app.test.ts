@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from './app.js';
 
+const models = ['default-model', 'alternate-model'];
+
 describe('API application', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -15,28 +17,58 @@ describe('API application', () => {
     expect(response.body).toEqual({ status: 'ok' });
   });
 
-  it('returns a complete chat response', async () => {
+  it('returns the available models and the first model as the default', async () => {
+    const response = await request(createApp({ models })).get(
+      '/api/chat/options',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      defaultModel: 'default-model',
+      models,
+    });
+  });
+
+  it('returns a complete chat response from the selected model', async () => {
     const completeChat = vi
       .fn()
       .mockResolvedValue({ content: 'Hello from the assistant.' });
-    const response = await request(createApp({ completeChat }))
+    const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({ messages: [{ content: 'Hello', role: 'user' }] });
+      .send({
+        messages: [{ content: 'Hello', role: 'user' }],
+        model: 'alternate-model',
+      });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       message: { content: 'Hello from the assistant.', role: 'assistant' },
     });
-    expect(completeChat).toHaveBeenCalledWith([
-      { content: 'Hello', role: 'user' },
-    ]);
+    expect(completeChat).toHaveBeenCalledWith(
+      [{ content: 'Hello', role: 'user' }],
+      'alternate-model',
+    );
   });
 
   it('rejects an invalid chat request', async () => {
     const completeChat = vi.fn();
-    const response = await request(createApp({ completeChat }))
+    const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({ messages: [] });
+      .send({ messages: [], model: 'default-model' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: 'Invalid chat request.' });
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects a model that is not configured', async () => {
+    const completeChat = vi.fn();
+    const response = await request(createApp({ completeChat, models }))
+      .post('/api/chat')
+      .send({
+        messages: [{ content: 'Hello', role: 'user' }],
+        model: 'unknown-model',
+      });
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid chat request.' });
@@ -48,9 +80,12 @@ describe('API application', () => {
     const completeChat = vi
       .fn()
       .mockRejectedValue(new Error('The model is unavailable.'));
-    const response = await request(createApp({ completeChat }))
+    const response = await request(createApp({ completeChat, models }))
       .post('/api/chat')
-      .send({ messages: [{ content: 'Hello', role: 'user' }] });
+      .send({
+        messages: [{ content: 'Hello', role: 'user' }],
+        model: 'default-model',
+      });
 
     expect(response.status).toBe(502);
     expect(response.body).toEqual({ error: 'The model is unavailable.' });

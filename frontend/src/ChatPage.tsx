@@ -13,20 +13,30 @@ interface ChatMessage {
   content: string;
 }
 
-interface ChatResponse {
+interface ApiErrorResponse {
+  error?: string;
+  details?: string;
+}
+
+interface ChatResponse extends ApiErrorResponse {
   message?: {
     role?: string;
     content?: string;
   };
-  error?: string;
-  details?: string;
+}
+
+interface ChatOptionsResponse extends ApiErrorResponse {
+  defaultModel?: unknown;
+  models?: unknown;
 }
 
 function formatApiError(error: string, details?: string) {
   return [error, details].filter(Boolean).join('\n\n');
 }
 
-async function readChatResponse(response: Response): Promise<ChatResponse> {
+async function readApiResponse<T extends object>(
+  response: Response,
+): Promise<Partial<T>> {
   const body = await response.text();
 
   if (!body.trim()) {
@@ -37,7 +47,7 @@ async function readChatResponse(response: Response): Promise<ChatResponse> {
     const data: unknown = JSON.parse(body);
 
     if (typeof data === 'object' && data !== null) {
-      return data as ChatResponse;
+      return data as Partial<T>;
     }
   } catch {
     // Report a stable API error below instead of exposing a JSON parser error.
@@ -53,7 +63,67 @@ export function ChatPage() {
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [isOptionsLoading, setIsOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    async function loadOptions() {
+      try {
+        const response = await fetch('/api/chat/options', {
+          signal: abortController.signal,
+        });
+        const data = await readApiResponse<ChatOptionsResponse>(response);
+
+        if (!response.ok) {
+          throw new Error(
+            formatApiError(
+              data.error ?? `The API returned status ${response.status}.`,
+              data.details,
+            ),
+          );
+        }
+
+        const availableModels = data.models;
+
+        if (
+          !Array.isArray(availableModels) ||
+          availableModels.length === 0 ||
+          !availableModels.every((model) => typeof model === 'string')
+        ) {
+          throw new Error('The API returned invalid chat options.');
+        }
+
+        setModels(availableModels);
+        setSelectedModel(
+          typeof data.defaultModel === 'string' &&
+            availableModels.includes(data.defaultModel)
+            ? data.defaultModel
+            : availableModels[0],
+        );
+      } catch (caughtError) {
+        if (!abortController.signal.aborted) {
+          setOptionsError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : 'Unable to load chat options.',
+          );
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsOptionsLoading(false);
+        }
+      }
+    }
+
+    void loadOptions();
+
+    return () => abortController.abort();
+  }, []);
 
   useEffect(() => {
     const messageList = messageListRef.current;
@@ -68,7 +138,7 @@ export function ChatPage() {
 
     const content = draft.trim();
 
-    if (!content || isLoading) {
+    if (!content || !selectedModel || isLoading) {
       return;
     }
 
@@ -84,11 +154,11 @@ export function ChatPage() {
 
     try {
       const response = await fetch('/api/chat', {
-        body: JSON.stringify({ messages: nextMessages }),
+        body: JSON.stringify({ messages: nextMessages, model: selectedModel }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });
-      const data = await readChatResponse(response);
+      const data = await readApiResponse<ChatResponse>(response);
 
       if (!response.ok) {
         throw new Error(
@@ -140,6 +210,37 @@ export function ChatPage() {
           </div>
           <span className="api-badge">Complete response</span>
         </header>
+
+        <section className="chat-options" aria-labelledby="options-title">
+          <div className="chat-options-heading">
+            <h2 id="options-title">Options</h2>
+            <p>Changes apply to the next response.</p>
+          </div>
+          <label className="chat-option" htmlFor="chat-model">
+            <span>Model</span>
+            <select
+              disabled={isLoading || isOptionsLoading || models.length === 0}
+              id="chat-model"
+              onChange={(event) => setSelectedModel(event.target.value)}
+              value={selectedModel}
+            >
+              {isOptionsLoading && <option value="">Loading models…</option>}
+              {!isOptionsLoading && models.length === 0 && (
+                <option value="">No models available</option>
+              )}
+              {models.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </label>
+          {optionsError && (
+            <p className="options-error" role="alert">
+              {optionsError}
+            </p>
+          )}
+        </section>
 
         <div
           className="chat-messages"
@@ -197,7 +298,7 @@ export function ChatPage() {
               Message
             </label>
             <textarea
-              disabled={isLoading}
+              disabled={isLoading || isOptionsLoading || !selectedModel}
               id="chat-input"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={handleKeyDown}
@@ -206,7 +307,12 @@ export function ChatPage() {
               value={draft}
             />
             <button
-              disabled={isLoading || draft.trim().length === 0}
+              disabled={
+                isLoading ||
+                isOptionsLoading ||
+                !selectedModel ||
+                draft.trim().length === 0
+              }
               type="submit"
             >
               {isLoading ? 'Sending…' : 'Send'}

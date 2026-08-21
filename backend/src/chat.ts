@@ -25,13 +25,25 @@ function createClient() {
   });
 }
 
+export function getChatModels() {
+  const configuredModels = (process.env.OPENAI_MODELS ?? '')
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+  return configuredModels.length > 0
+    ? [...new Set(configuredModels)]
+    : ['gpt-4o-mini'];
+}
+
 export async function completeChat(
   messages: ChatMessage[],
+  model: string,
 ): Promise<ChatResult> {
   const client = createClient();
   const completion = await client.chat.completions.create({
     messages: messages as ChatCompletionMessageParam[],
-    model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+    model,
   });
   const content = completion.choices[0]?.message.content;
 

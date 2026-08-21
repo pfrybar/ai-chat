@@ -2,7 +2,7 @@
 
 A TypeScript frontend/backend project for experimenting with OpenAI chat APIs and their options.
 
-The main page provides a chat interface backed by OpenAI's Chat Completions API. Conversations use complete JSON responses and send their message history with each request.
+The main page provides a chat interface backed by OpenAI's Chat Completions API. Conversations use complete JSON responses and send their message history with each request. A playground options panel can switch between configured models on any turn.
 
 The project includes:
 
@@ -27,7 +27,7 @@ npm run dev
 
 The frontend runs at <http://localhost:5173> and proxies `/api` requests to the backend at <http://localhost:3001>.
 
-`OPENAI_MODEL` defaults to `gpt-4o-mini`. Set `OPENAI_BASE_URL` to use a compatible provider endpoint.
+Set `OPENAI_MODELS` to a comma-separated list of available models. The first model is selected by default; when unset, the application uses `gpt-4o-mini`. Set `OPENAI_BASE_URL` to use a compatible provider endpoint.
 
 ## Commands
 

@@ -2,6 +2,7 @@ import express from 'express';
 
 import {
   completeChat,
+  getChatModels,
   type ChatMessage,
   type ChatResult,
   type ChatRole,
@@ -13,7 +14,11 @@ const maxMessageLength = 50_000;
 const requestBodyLimit = '128kb';
 
 export interface AppOptions {
-  completeChat?: (messages: ChatMessage[]) => Promise<ChatResult>;
+  completeChat?: (
+    messages: ChatMessage[],
+    model: string,
+  ) => Promise<ChatResult>;
+  models?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,6 +72,10 @@ function getErrorMessage(error: unknown) {
 export function createApp(options: AppOptions = {}) {
   const app = express();
   const createCompletion = options.completeChat ?? completeChat;
+  const models = options.models?.length
+    ? [...new Set(options.models)]
+    : getChatModels();
+  const defaultModel = models[0] ?? 'gpt-4o-mini';
 
   app.use(express.json({ limit: requestBodyLimit }));
 
@@ -74,18 +83,23 @@ export function createApp(options: AppOptions = {}) {
     response.json({ status: 'ok' });
   });
 
+  app.get('/api/chat/options', (_request, response) => {
+    response.json({ defaultModel, models });
+  });
+
   app.post('/api/chat', async (request, response) => {
     const messages = isRecord(request.body)
       ? parseMessages(request.body.messages)
       : null;
+    const model = isRecord(request.body) ? request.body.model : null;
 
-    if (!messages) {
+    if (!messages || typeof model !== 'string' || !models.includes(model)) {
       response.status(400).json({ error: 'Invalid chat request.' });
       return;
     }
 
     try {
-      const result = await createCompletion(messages);
+      const result = await createCompletion(messages, model);
       response.json({
         message: {
           content: result.content,
