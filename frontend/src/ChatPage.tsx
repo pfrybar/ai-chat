@@ -42,6 +42,22 @@ function formatApiError(error: string, details?: string) {
   return [error, details].filter(Boolean).join('\n\n');
 }
 
+function getInitialStreamingOption() {
+  return (
+    new URLSearchParams(window.location.search).get('delivery') !== 'complete'
+  );
+}
+
+function setOptionQueryParameter(name: 'delivery' | 'model', value: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set(name, value);
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
+
 async function readApiResponse<T extends object>(
   response: Response,
 ): Promise<Partial<T>> {
@@ -152,7 +168,7 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [streaming, setStreaming] = useState(true);
+  const [streaming, setStreaming] = useState(getInitialStreamingOption);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
@@ -190,12 +206,20 @@ export function ChatPage() {
           throw new Error('The API returned invalid chat options.');
         }
 
+        const requestedModel = new URLSearchParams(window.location.search).get(
+          'model',
+        );
+        const defaultModel =
+          typeof data.defaultModel === 'string' &&
+          availableModels.includes(data.defaultModel)
+            ? data.defaultModel
+            : availableModels[0];
+
         setModels(availableModels);
         setSelectedModel(
-          typeof data.defaultModel === 'string' &&
-            availableModels.includes(data.defaultModel)
-            ? data.defaultModel
-            : availableModels[0],
+          requestedModel && availableModels.includes(requestedModel)
+            ? requestedModel
+            : defaultModel,
         );
       } catch (caughtError) {
         if (!abortController.signal.aborted) {
@@ -311,6 +335,16 @@ export function ChatPage() {
     });
   }
 
+  function handleModelChange(model: string) {
+    setSelectedModel(model);
+    setOptionQueryParameter('model', model);
+  }
+
+  function handleDeliveryChange(delivery: 'complete' | 'stream') {
+    setStreaming(delivery === 'stream');
+    setOptionQueryParameter('delivery', delivery);
+  }
+
   function handleConversationScroll() {
     const messageList = messageListRef.current;
 
@@ -380,7 +414,7 @@ export function ChatPage() {
             <select
               disabled={isLoading || isOptionsLoading || models.length === 0}
               id="chat-model"
-              onChange={(event) => setSelectedModel(event.target.value)}
+              onChange={(event) => handleModelChange(event.target.value)}
               value={selectedModel}
             >
               {isOptionsLoading && <option value="">Loading models…</option>}
@@ -400,7 +434,9 @@ export function ChatPage() {
               disabled={isLoading}
               id="response-delivery"
               onChange={(event) =>
-                setStreaming(event.target.value === 'stream')
+                handleDeliveryChange(
+                  event.target.value as 'complete' | 'stream',
+                )
               }
               value={streaming ? 'stream' : 'complete'}
             >

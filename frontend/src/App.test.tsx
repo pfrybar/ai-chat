@@ -89,6 +89,7 @@ function controlledStreamResponse() {
 describe('App', () => {
   afterEach(() => {
     cleanup();
+    window.history.replaceState(null, '', '/');
     vi.restoreAllMocks();
   });
 
@@ -104,6 +105,44 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
+  });
+
+  it('restores model and delivery options from the query parameters', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/?model=alternate-model&delivery=complete',
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('alternate-model'),
+    );
+    expect(screen.getByLabelText('Response delivery')).toHaveValue('complete');
+  });
+
+  it('writes changed options to the query parameters', async () => {
+    window.history.replaceState(null, '', '/?source=test');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+
+    fireEvent.change(screen.getByLabelText('Model'), {
+      target: { value: 'alternate-model' },
+    });
+    fireEvent.change(screen.getByLabelText('Response delivery'), {
+      target: { value: 'complete' },
+    });
+
+    const query = new URLSearchParams(window.location.search);
+    expect(query.get('model')).toBe('alternate-model');
+    expect(query.get('delivery')).toBe('complete');
+    expect(query.get('source')).toBe('test');
   });
 
   it('changes models between turns while preserving conversation history', async () => {
