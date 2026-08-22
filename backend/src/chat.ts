@@ -13,6 +13,7 @@ export interface ChatMessage {
 
 export interface ChatResult {
   content: string;
+  rawResponse?: unknown;
   reasoningSummary?: string;
 }
 
@@ -21,6 +22,7 @@ export type ChatStreamChunk =
   | { type: 'reasoning_summary'; content: string };
 
 export interface ChatStreamResult {
+  getRawResponse?: () => unknown;
   stream: AsyncIterable<ChatStreamChunk>;
 }
 
@@ -52,7 +54,7 @@ export async function completeChat(
     throw new Error('The model returned an empty response.');
   }
 
-  return { content };
+  return { content, rawResponse: completion };
 }
 
 export async function streamChat(
@@ -72,9 +74,13 @@ export async function streamChat(
     { signal },
   );
 
+  const rawResponse: unknown[] = [];
+
   return {
+    getRawResponse: () => rawResponse,
     stream: (async function* () {
       for await (const chunk of completionStream) {
+        rawResponse.push(chunk);
         const content = chunk.choices[0]?.delta.content;
 
         if (content) {

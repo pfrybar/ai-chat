@@ -52,6 +52,9 @@ describe('Chat Completions client', () => {
       completeChat([{ content: 'Hello', role: 'user' }], 'test-model', 'high'),
     ).resolves.toEqual({
       content: 'Hello from the model.',
+      rawResponse: {
+        choices: [{ message: { content: 'Hello from the model.' } }],
+      },
     });
     expect(createCompletion).toHaveBeenCalledWith({
       messages: [{ content: 'Hello', role: 'user' }],
@@ -87,6 +90,11 @@ describe('Chat Completions client', () => {
       { content: 'Hello ', type: 'delta' },
       { content: 'as it ', type: 'delta' },
       { content: 'arrives.', type: 'delta' },
+    ]);
+    expect(result.getRawResponse?.()).toEqual([
+      { choices: [{ delta: { content: 'Hello ' } }] },
+      { choices: [{ delta: { content: 'as it ' } }] },
+      { choices: [{ delta: { content: 'arrives.' } }] },
     ]);
     expect(createCompletion).toHaveBeenCalledWith(
       {

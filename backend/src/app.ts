@@ -195,7 +195,7 @@ function sendEvent(
   event:
     | { type: 'delta'; content: string }
     | { type: 'reasoning_summary'; content: string }
-    | { type: 'done' }
+    | { type: 'done'; rawResponse?: unknown }
     | { type: 'error'; error: string },
 ) {
   response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -246,7 +246,12 @@ async function streamToResponse(
     }
 
     if (!response.destroyed) {
-      sendEvent(response, { type: 'done' });
+      sendEvent(response, {
+        ...(result.getRawResponse
+          ? { rawResponse: result.getRawResponse() }
+          : {}),
+        type: 'done',
+      });
       response.end();
     }
   } catch (error) {
@@ -276,6 +281,9 @@ async function completeToResponse(
         content: result.content,
         role: 'assistant',
       },
+      ...(result.rawResponse !== undefined
+        ? { rawResponse: result.rawResponse }
+        : {}),
       ...(result.reasoningSummary
         ? { reasoningSummary: result.reasoningSummary }
         : {}),

@@ -76,6 +76,7 @@ export async function completeResponse(
 
   return {
     content,
+    rawResponse: response,
     ...(summary ? { reasoningSummary: summary } : {}),
   };
 }
@@ -103,11 +104,15 @@ export async function streamResponse(
     { signal },
   );
 
+  const rawResponse: unknown[] = [];
+
   return {
+    getRawResponse: () => rawResponse,
     stream: (async function* () {
       const summaryPartsWithDeltas = new Set<number>();
 
       for await (const event of responseStream) {
+        rawResponse.push(event);
         if (event.type === 'response.output_text.delta' && event.delta) {
           yield {
             content: event.delta,

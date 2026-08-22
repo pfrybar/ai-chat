@@ -90,6 +90,7 @@ describe('API application', () => {
   it('returns a complete Responses API response and reasoning summary', async () => {
     const completeResponse = vi.fn().mockResolvedValue({
       content: 'Responses response.',
+      rawResponse: { id: 'resp_complete', object: 'response' },
       reasoningSummary: 'The model considered the relevant facts.',
     });
     const response = await request(createApp({ completeResponse, models }))
@@ -107,6 +108,7 @@ describe('API application', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       message: { content: 'Responses response.', role: 'assistant' },
+      rawResponse: { id: 'resp_complete', object: 'response' },
       reasoningSummary: 'The model considered the relevant facts.',
     });
     expect(completeResponse).toHaveBeenCalledWith(
@@ -120,6 +122,7 @@ describe('API application', () => {
 
   it('streams Responses API response chunks', async () => {
     const streamResponse = vi.fn().mockResolvedValue({
+      getRawResponse: () => [{ type: 'response.completed' }],
       stream: (async function* () {
         yield {
           content: 'The model considered ',
@@ -147,7 +150,7 @@ describe('API application', () => {
       'data: {"content":"The model considered ","type":"reasoning_summary"}\n\n' +
         'data: {"content":"Hello ","type":"delta"}\n\n' +
         'data: {"content":"from Responses.","type":"delta"}\n\n' +
-        'data: {"type":"done"}\n\n',
+        'data: {"rawResponse":[{"type":"response.completed"}],"type":"done"}\n\n',
     );
     expect(streamResponse).toHaveBeenCalledWith(
       messages,

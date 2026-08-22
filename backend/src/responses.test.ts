@@ -51,6 +51,20 @@ describe('Responses API client', () => {
       ),
     ).resolves.toEqual({
       content: 'Hello from the Responses API.',
+      rawResponse: {
+        output: [
+          {
+            summary: [
+              {
+                text: 'The model considered the relevant facts.',
+                type: 'summary_text',
+              },
+            ],
+            type: 'reasoning',
+          },
+        ],
+        output_text: 'Hello from the Responses API.',
+      },
       reasoningSummary: 'The model considered the relevant facts.',
     });
     expect(createResponse).toHaveBeenCalledWith({
@@ -101,6 +115,20 @@ describe('Responses API client', () => {
       { content: 'the relevant facts.', type: 'reasoning_summary' },
       { content: 'Hello ', type: 'delta' },
       { content: 'as it arrives.', type: 'delta' },
+    ]);
+    expect(result.getRawResponse?.()).toEqual([
+      {
+        delta: 'The model considered ',
+        summary_index: 0,
+        type: 'response.reasoning_summary_text.delta',
+      },
+      {
+        delta: 'the relevant facts.',
+        summary_index: 0,
+        type: 'response.reasoning_summary_text.delta',
+      },
+      { delta: 'Hello ', type: 'response.output_text.delta' },
+      { delta: 'as it arrives.', type: 'response.output_text.delta' },
     ]);
     expect(createResponse).toHaveBeenCalledWith(
       {

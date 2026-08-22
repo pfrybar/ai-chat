@@ -23,10 +23,15 @@ function optionsResponse() {
   );
 }
 
-function chatResponse(content: string, reasoningSummary?: string) {
+function chatResponse(
+  content: string,
+  reasoningSummary?: string,
+  rawResponse?: unknown,
+) {
   return new Response(
     JSON.stringify({
       message: { content, role: 'assistant' },
+      ...(rawResponse !== undefined ? { rawResponse } : {}),
       ...(reasoningSummary ? { reasoningSummary } : {}),
     }),
     {
@@ -50,11 +55,15 @@ function streamResponse(...chunks: string[]) {
   });
 }
 
-function reasoningSummaryStreamResponse(summary: string, content: string) {
+function reasoningSummaryStreamResponse(
+  summary: string,
+  content: string,
+  rawResponse?: unknown,
+) {
   return new Response(
     `data: ${JSON.stringify({ content: summary, type: 'reasoning_summary' })}\n\n` +
       `data: ${JSON.stringify({ content, type: 'delta' })}\n\n` +
-      `data: ${JSON.stringify({ type: 'done' })}\n\n`,
+      `data: ${JSON.stringify({ ...(rawResponse !== undefined ? { rawResponse } : {}), type: 'done' })}\n\n`,
     {
       headers: { 'Content-Type': 'text/event-stream' },
       status: 200,
@@ -315,6 +324,7 @@ describe('App', () => {
         reasoningSummaryStreamResponse(
           'The model compared the options.',
           'A useful answer.',
+          [{ type: 'response.completed' }],
         ),
       );
 
@@ -340,6 +350,16 @@ describe('App', () => {
     expect(
       screen.getByText('Reasoning summary', { selector: 'summary' }),
     ).toBeInTheDocument();
+    const rawResponseButton = screen.getByLabelText('View raw response');
+    fireEvent.click(rawResponseButton);
+    expect(
+      screen.getByRole('dialog', { name: 'Raw response' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/response\.completed/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Close raw response'));
+    expect(
+      screen.queryByRole('dialog', { name: 'Raw response' }),
+    ).not.toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/chat',
       expect.objectContaining({
@@ -416,6 +436,7 @@ describe('App', () => {
         chatResponse(
           'A complete response.',
           'The model weighed the tradeoffs.',
+          { id: 'resp_complete', object: 'response' },
         ),
       );
 
@@ -441,6 +462,8 @@ describe('App', () => {
     expect(
       screen.getByText('The model weighed the tradeoffs.'),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('View raw response'));
+    expect(screen.getByText(/resp_complete/)).toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/chat',
       expect.objectContaining({
@@ -449,6 +472,49 @@ describe('App', () => {
           messages: [{ content: 'Hello', role: 'user' }],
           model: 'default-model',
           reasoningSummary: 'detailed',
+          stream: false,
+        }),
+      }),
+    );
+  });
+
+  it('excludes raw responses from later conversation history', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(
+        chatResponse('First answer.', undefined, { id: 'resp_first' }),
+      )
+      .mockResolvedValueOnce(
+        chatResponse('Second answer.', undefined, { id: 'resp_second' }),
+      );
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('Response delivery'), {
+      target: { value: 'complete' },
+    });
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'First message' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(await screen.findByText('First answer.')).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'Second message' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(await screen.findByText('Second answer.')).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/chat',
+      expect.objectContaining({
+        body: JSON.stringify({
+          api: 'chat',
+          messages: [
+            { content: 'First message', role: 'user' },
+            { content: 'First answer.', role: 'assistant' },
+            { content: 'Second message', role: 'user' },
+          ],
+          model: 'default-model',
           stream: false,
         }),
       }),

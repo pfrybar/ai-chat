@@ -37,6 +37,7 @@ const chatReasoningEfforts = new Set<ReasoningEffort>([
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  rawResponse?: unknown;
 }
 
 interface ChatReasoningSummary {
@@ -55,6 +56,7 @@ interface ChatResponse extends ApiErrorResponse {
   message?: {
     content?: string;
   };
+  rawResponse?: unknown;
   reasoningSummary?: string;
 }
 
@@ -66,11 +68,19 @@ interface ChatOptionsResponse extends ApiErrorResponse {
 type ChatStreamEvent =
   | { type: 'delta'; content: string }
   | { type: 'reasoning_summary'; content: string }
-  | { type: 'done' }
+  | { type: 'done'; rawResponse?: unknown }
   | { type: 'error'; error: string };
 
 function formatApiError(error: string, details?: string) {
   return [error, details].filter(Boolean).join('\n\n');
+}
+
+function formatRawResponse(rawResponse: unknown) {
+  try {
+    return JSON.stringify(rawResponse, null, 2);
+  } catch {
+    return String(rawResponse);
+  }
 }
 
 function isChatMessage(item: ChatItem): item is ChatMessage {
@@ -170,6 +180,7 @@ async function consumeChatStream(
   response: Response,
   onDelta: (content: string) => void,
   onReasoningSummary: (content: string) => void,
+  onComplete: (rawResponse: unknown | undefined) => void,
 ) {
   if (!response.body) {
     throw new Error('The API did not provide a response stream.');
@@ -219,6 +230,7 @@ async function consumeChatStream(
     } else if (event.type === 'error' && typeof event.error === 'string') {
       throw new Error(event.error);
     } else if (event.type === 'done') {
+      onComplete(event.rawResponse);
       streamCompleted = true;
     } else {
       throw new Error('The API returned an invalid streaming event.');
@@ -268,6 +280,9 @@ export function ChatPage() {
   );
   const [streaming, setStreaming] = useState(getInitialStreamingOption);
   const [error, setError] = useState<string | null>(null);
+  const [rawResponseModal, setRawResponseModal] = useState<{
+    content: unknown;
+  } | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [isOptionsLoading, setIsOptionsLoading] = useState(true);
@@ -339,6 +354,22 @@ export function ChatPage() {
     return () => abortController.abort();
   }, []);
 
+  useEffect(() => {
+    if (!rawResponseModal) {
+      return;
+    }
+
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setRawResponseModal(null);
+      }
+    }
+
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [rawResponseModal]);
+
   useLayoutEffect(() => {
     const messageList = messageListRef.current;
 
@@ -361,7 +392,12 @@ export function ChatPage() {
 
     const userMessage: ChatMessage = { content, role: 'user' };
     const nextMessages: ChatMessage[] = [
-      ...messages.filter(isChatMessage),
+      ...messages
+        .filter(isChatMessage)
+        .map(({ content: messageContent, role }) => ({
+          content: messageContent,
+          role,
+        })),
       userMessage,
     ];
 
@@ -406,6 +442,7 @@ export function ChatPage() {
           response,
           appendAssistantDelta,
           appendReasoningSummary,
+          attachRawResponse,
         );
       } else {
         const data = await readApiResponse<ChatResponse>(response);
@@ -425,7 +462,13 @@ export function ChatPage() {
                 },
               ]
             : []),
-          { content: assistantContent, role: 'assistant' },
+          {
+            content: assistantContent,
+            ...(data.rawResponse !== undefined
+              ? { rawResponse: data.rawResponse }
+              : {}),
+            role: 'assistant',
+          },
         ]);
       }
     } catch (caughtError) {
@@ -451,6 +494,35 @@ export function ChatPage() {
       }
 
       return [...currentMessages, { content: delta, role: 'assistant' }];
+    });
+  }
+
+  function attachRawResponse(rawResponse: unknown | undefined) {
+    if (rawResponse === undefined) {
+      return;
+    }
+
+    setMessages((currentMessages) => {
+      let assistantIndex = -1;
+
+      for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
+        if (currentMessages[index].role === 'assistant') {
+          assistantIndex = index;
+          break;
+        }
+      }
+
+      if (assistantIndex === -1) {
+        return currentMessages;
+      }
+
+      const assistantMessage = currentMessages[assistantIndex];
+
+      return [
+        ...currentMessages.slice(0, assistantIndex),
+        { ...assistantMessage, rawResponse },
+        ...currentMessages.slice(assistantIndex + 1),
+      ];
     });
   }
 
@@ -755,9 +827,33 @@ export function ChatPage() {
                     className={`chat-message ${message.role}`}
                     key={`${message.role}-${index}`}
                   >
-                    <span className="message-role">
-                      {message.role === 'user' ? 'You' : 'Assistant'}
-                    </span>
+                    <div className="message-header">
+                      <span className="message-role">
+                        {message.role === 'user' ? 'You' : 'Assistant'}
+                      </span>
+                      {message.role === 'assistant' &&
+                        message.rawResponse !== undefined && (
+                          <button
+                            aria-label="View raw response"
+                            className="raw-response-button"
+                            onClick={() =>
+                              setRawResponseModal({
+                                content: message.rawResponse,
+                              })
+                            }
+                            title="View raw response"
+                            type="button"
+                          >
+                            <svg
+                              aria-hidden="true"
+                              viewBox="0 0 24 24"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path d="M8 9 5 12l3 3m8-6 3 3-3 3M14 5l-4 14" />
+                            </svg>
+                          </button>
+                        )}
+                    </div>
                     {message.role === 'assistant' ? (
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {message.content}
@@ -818,6 +914,33 @@ export function ChatPage() {
           </section>
         </div>
       </section>
+
+      {rawResponseModal && (
+        <div
+          className="raw-response-modal-backdrop"
+          onMouseDown={() => setRawResponseModal(null)}
+        >
+          <section
+            aria-labelledby="raw-response-title"
+            aria-modal="true"
+            className="raw-response-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <header>
+              <h2 id="raw-response-title">Raw response</h2>
+              <button
+                aria-label="Close raw response"
+                onClick={() => setRawResponseModal(null)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <pre>{formatRawResponse(rawResponseModal.content)}</pre>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

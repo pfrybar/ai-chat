@@ -46,6 +46,10 @@ Enable **Web search** while using the Responses API to give the model access to 
 
 The Responses API can optionally return a reasoning summary in `auto`, `concise`, or `detailed` mode. This playground streams those summaries into a collapsible response card and includes them with complete responses. The summary option is Responses-only: OpenAI's [reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries) documents it as `reasoning.summary` on Responses API requests, while the Chat Completions reference has no corresponding summary parameter. Summaries are not raw reasoning tokens.
 
+### Raw provider responses
+
+Each completed assistant bubble includes a code icon that opens the raw provider payload. Complete requests retain the full OpenAI response object; streamed requests retain the provider stream events. Raw payloads are held only in the current browser conversation and are not sent back as chat history on later turns.
+
 ## Commands
 
 ```bash
