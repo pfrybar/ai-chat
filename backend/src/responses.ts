@@ -2,6 +2,7 @@ import type {
   Response as OpenAIResponse,
   ResponseInput,
   ResponseReasoningItem,
+  Tool as ResponseTool,
 } from 'openai/resources/responses/responses';
 
 import type {
@@ -14,9 +15,14 @@ import type {
 import { createOpenAIClient } from './openai.js';
 
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed';
+export type ChatTool = 'web_search';
 
 function toResponseInput(messages: ChatMessage[]): ResponseInput {
   return messages.map(({ content, role }) => ({ content, role }));
+}
+
+function toResponseTools(tools: ChatTool[]): ResponseTool[] | undefined {
+  return tools.includes('web_search') ? [{ type: 'web_search' }] : undefined;
 }
 
 function toReasoning(
@@ -46,16 +52,18 @@ function getReasoningSummary(response: OpenAIResponse): string | undefined {
 export async function completeResponse(
   messages: ChatMessage[],
   model: string,
+  tools: ChatTool[],
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
 ): Promise<ChatResult> {
   const client = createOpenAIClient();
+  const responseTools = toResponseTools(tools);
+  const reasoning = toReasoning(reasoningEffort, reasoningSummary);
   const response = await client.responses.create({
     input: toResponseInput(messages),
     model,
-    ...(toReasoning(reasoningEffort, reasoningSummary)
-      ? { reasoning: toReasoning(reasoningEffort, reasoningSummary) }
-      : {}),
+    ...(responseTools ? { tools: responseTools } : {}),
+    ...(reasoning ? { reasoning } : {}),
     store: false,
   });
   const content = response.output_text;
@@ -75,18 +83,20 @@ export async function completeResponse(
 export async function streamResponse(
   messages: ChatMessage[],
   model: string,
+  tools: ChatTool[],
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
   signal?: AbortSignal,
 ): Promise<ChatStreamResult> {
   const client = createOpenAIClient();
+  const responseTools = toResponseTools(tools);
+  const reasoning = toReasoning(reasoningEffort, reasoningSummary);
   const responseStream = await client.responses.create(
     {
       input: toResponseInput(messages),
       model,
-      ...(toReasoning(reasoningEffort, reasoningSummary)
-        ? { reasoning: toReasoning(reasoningEffort, reasoningSummary) }
-        : {}),
+      ...(responseTools ? { tools: responseTools } : {}),
+      ...(reasoning ? { reasoning } : {}),
       store: false,
       stream: true,
     },

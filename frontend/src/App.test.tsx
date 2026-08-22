@@ -119,6 +119,7 @@ describe('App', () => {
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
     expect(screen.getByLabelText('API')).toHaveValue('chat');
+    expect(screen.getByLabelText('Web search')).toBeDisabled();
     expect(screen.getByLabelText('Reasoning effort')).toHaveValue('');
   });
 
@@ -126,7 +127,7 @@ describe('App', () => {
     window.history.replaceState(
       null,
       '',
-      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&delivery=complete',
+      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&web_search=true&delivery=complete',
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
@@ -136,6 +137,7 @@ describe('App', () => {
       expect(screen.getByLabelText('Model')).toHaveValue('alternate-model'),
     );
     expect(screen.getByLabelText('API')).toHaveValue('responses');
+    expect(screen.getByLabelText('Web search')).toBeChecked();
     expect(screen.getByLabelText('Reasoning effort')).toHaveValue('high');
     expect(screen.getByLabelText('Reasoning summary')).toHaveValue('detailed');
     expect(screen.getByLabelText('Response delivery')).toHaveValue('complete');
@@ -156,6 +158,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Model'), {
       target: { value: 'alternate-model' },
     });
+    fireEvent.click(screen.getByLabelText('Web search'));
     fireEvent.change(screen.getByLabelText('Reasoning effort'), {
       target: { value: 'xhigh' },
     });
@@ -169,6 +172,7 @@ describe('App', () => {
     const query = new URLSearchParams(window.location.search);
     expect(query.get('api')).toBe('responses');
     expect(query.get('model')).toBe('alternate-model');
+    expect(query.get('web_search')).toBe('true');
     expect(query.get('reasoning')).toBe('xhigh');
     expect(query.get('summary')).toBe('concise');
     expect(query.get('delivery')).toBe('complete');
@@ -279,6 +283,7 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Reasoning effort'), {
       target: { value: 'high' },
     });
+    fireEvent.click(screen.getByLabelText('Web search'));
     const input = screen.getByLabelText('Message');
 
     fireEvent.change(input, { target: { value: 'Hello' } });
@@ -295,6 +300,7 @@ describe('App', () => {
           messages: [{ content: 'Hello', role: 'user' }],
           model: 'default-model',
           reasoningEffort: 'high',
+          tools: ['web_search'],
           stream: true,
         }),
       }),

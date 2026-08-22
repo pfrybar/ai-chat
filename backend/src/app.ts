@@ -13,11 +13,13 @@ import {
 import {
   completeResponse,
   streamResponse,
+  type ChatTool,
   type ReasoningSummary,
 } from './responses.js';
 
 const validRoles = new Set<ChatRole>(['system', 'user', 'assistant']);
 const validApis = new Set<ChatApi>(['chat', 'responses']);
+const validTools = new Set<ChatTool>(['web_search']);
 const validReasoningEfforts = new Set<ReasoningEffort>([
   'none',
   'minimal',
@@ -53,12 +55,14 @@ type ChatStreamService = (
 type ResponseCompleteService = (
   messages: ChatMessage[],
   model: string,
+  tools: ChatTool[],
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
 ) => Promise<ChatResult>;
 type ResponseStreamService = (
   messages: ChatMessage[],
   model: string,
+  tools: ChatTool[],
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
   signal?: AbortSignal,
@@ -108,6 +112,32 @@ function parseMessages(value: unknown): ChatMessage[] | null {
   }
 
   return messages;
+}
+
+function parseTools(value: unknown): ChatTool[] | null {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const tools: ChatTool[] = [];
+
+  for (const tool of value) {
+    if (
+      typeof tool !== 'string' ||
+      !validTools.has(tool as ChatTool) ||
+      tools.includes(tool as ChatTool)
+    ) {
+      return null;
+    }
+
+    tools.push(tool as ChatTool);
+  }
+
+  return tools;
 }
 
 function parseReasoningEffort(
@@ -285,6 +315,9 @@ export function createApp(options: AppOptions = {}) {
       : null;
     const api = isRecord(request.body) ? request.body.api : null;
     const model = isRecord(request.body) ? request.body.model : null;
+    const tools = isRecord(request.body)
+      ? parseTools(request.body.tools)
+      : null;
     const reasoningEffort = isRecord(request.body)
       ? parseReasoningEffort(request.body.reasoningEffort)
       : undefined;
@@ -299,10 +332,12 @@ export function createApp(options: AppOptions = {}) {
       !validApis.has(api as ChatApi) ||
       typeof model !== 'string' ||
       !models.includes(model) ||
+      !tools ||
       reasoningEffort === undefined ||
       reasoningSummary === undefined ||
       (api === 'chat' &&
-        (reasoningSummary !== null ||
+        (tools.length > 0 ||
+          reasoningSummary !== null ||
           (reasoningEffort !== null &&
             !validChatReasoningEfforts.has(reasoningEffort)))) ||
       typeof stream !== 'boolean'
@@ -324,6 +359,7 @@ export function createApp(options: AppOptions = {}) {
             : services.streamResponse(
                 messages,
                 model,
+                tools,
                 reasoningEffort,
                 reasoningSummary,
                 signal,
@@ -341,6 +377,7 @@ export function createApp(options: AppOptions = {}) {
           : services.completeResponse(
               messages,
               model,
+              tools,
               reasoningEffort,
               reasoningSummary,
             ),

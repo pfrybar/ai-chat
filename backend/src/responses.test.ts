@@ -45,6 +45,7 @@ describe('Responses API client', () => {
       completeResponse(
         [{ content: 'Hello', role: 'user' }],
         'test-model',
+        ['web_search'],
         'high',
         'detailed',
       ),
@@ -56,6 +57,7 @@ describe('Responses API client', () => {
       input: [{ content: 'Hello', role: 'user' }],
       model: 'test-model',
       reasoning: { effort: 'high', summary: 'detailed' },
+      tools: [{ type: 'web_search' }],
       store: false,
     });
   });
@@ -83,6 +85,7 @@ describe('Responses API client', () => {
     const result = await streamResponse(
       [{ content: 'Hello', role: 'user' }],
       'test-model',
+      ['web_search'],
       'low',
       'concise',
       signal,
@@ -104,6 +107,7 @@ describe('Responses API client', () => {
         input: [{ content: 'Hello', role: 'user' }],
         model: 'test-model',
         reasoning: { effort: 'low', summary: 'concise' },
+        tools: [{ type: 'web_search' }],
         store: false,
         stream: true,
       },
@@ -127,6 +131,7 @@ describe('Responses API client', () => {
     const result = await streamResponse(
       [{ content: 'Hello', role: 'user' }],
       'test-model',
+      [],
       null,
       'auto',
     );
@@ -150,6 +155,7 @@ describe('Responses API client', () => {
       completeResponse(
         [{ content: 'Hello', role: 'user' }],
         'test-model',
+        [],
         null,
         null,
       ),

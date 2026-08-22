@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm';
 
 type ChatApi = 'chat' | 'responses';
 type ReasoningSummary = 'auto' | 'concise' | 'detailed';
+type ChatTool = 'web_search';
 type ReasoningEffort =
   'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -108,6 +109,15 @@ function getInitialReasoningSummary(): ReasoningSummary | null {
     : null;
 }
 
+function getInitialWebSearchOption() {
+  const parameters = new URLSearchParams(window.location.search);
+
+  return (
+    getInitialApiOption() === 'responses' &&
+    parameters.get('web_search') === 'true'
+  );
+}
+
 function getInitialStreamingOption() {
   return (
     new URLSearchParams(window.location.search).get('delivery') !== 'complete'
@@ -115,7 +125,7 @@ function getInitialStreamingOption() {
 }
 
 function setOptionQueryParameter(
-  name: 'api' | 'delivery' | 'model' | 'reasoning' | 'summary',
+  name: 'api' | 'delivery' | 'model' | 'reasoning' | 'summary' | 'web_search',
   value: string | null,
 ) {
   const url = new URL(window.location.href);
@@ -253,6 +263,9 @@ export function ChatPage() {
     useState<ReasoningEffort | null>(getInitialReasoningEffort);
   const [reasoningSummary, setReasoningSummary] =
     useState<ReasoningSummary | null>(getInitialReasoningSummary);
+  const [selectedTools, setSelectedTools] = useState<ChatTool[]>(() =>
+    getInitialWebSearchOption() ? ['web_search'] : [],
+  );
   const [streaming, setStreaming] = useState(getInitialStreamingOption);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
@@ -368,6 +381,9 @@ export function ChatPage() {
           ...(api === 'responses' && reasoningSummary
             ? { reasoningSummary }
             : {}),
+          ...(api === 'responses' && selectedTools.length > 0
+            ? { tools: selectedTools }
+            : {}),
           stream: streaming,
         }),
         headers: { 'Content-Type': 'application/json' },
@@ -468,6 +484,10 @@ export function ChatPage() {
       if (reasoningSummary !== null) {
         handleReasoningSummaryChange(null);
       }
+
+      if (selectedTools.length > 0) {
+        handleWebSearchChange(false);
+      }
     }
   }
 
@@ -486,6 +506,11 @@ export function ChatPage() {
   function handleReasoningSummaryChange(nextSummary: ReasoningSummary | null) {
     setReasoningSummary(nextSummary);
     setOptionQueryParameter('summary', nextSummary);
+  }
+
+  function handleWebSearchChange(enabled: boolean) {
+    setSelectedTools(enabled ? ['web_search'] : []);
+    setOptionQueryParameter('web_search', enabled ? 'true' : null);
   }
 
   function handleDeliveryChange(delivery: 'complete' | 'stream') {
@@ -549,6 +574,29 @@ export function ChatPage() {
             </p>
           </div>
         </header>
+
+        <fieldset className="chat-tools">
+          <legend>Tools</legend>
+          <label className={`chat-tool${api === 'chat' ? ' disabled' : ''}`}>
+            <input
+              aria-label="Web search"
+              checked={
+                api === 'responses' && selectedTools.includes('web_search')
+              }
+              disabled={isLoading || api === 'chat'}
+              onChange={(event) => handleWebSearchChange(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>Web search</strong>
+              <small>
+                {api === 'chat'
+                  ? 'Unavailable with Chat Completions. Switch to Responses to enable.'
+                  : 'Give the model access to current information from the web.'}
+              </small>
+            </span>
+          </label>
+        </fieldset>
 
         <section className="chat-options" aria-labelledby="options-title">
           <div className="chat-options-heading">

@@ -61,7 +61,7 @@ textarea:focus-visible {
 
 .chat-card {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   width: min(58rem, 100%);
   height: min(52rem, calc(100vh - 3rem));
   min-height: 35rem;
@@ -97,6 +97,63 @@ textarea:focus-visible {
   margin: 0.9rem 0 0;
   color: #9ca3af;
   line-height: 1.5;
+}
+
+.chat-tools {
+  margin: 0;
+  padding: 0.9rem 2rem;
+  border: 0;
+  border-bottom: 1px solid #263247;
+  background: rgb(15 23 42 / 72%);
+}
+
+.chat-tools legend {
+  margin-bottom: 0.55rem;
+  padding: 0;
+  color: #9ca3af;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat-tool {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  cursor: pointer;
+}
+
+.chat-tool.disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.chat-tool input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.15rem 0 0;
+  accent-color: #60a5fa;
+}
+
+.chat-tool input:disabled {
+  cursor: not-allowed;
+}
+
+.chat-tool span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.chat-tool strong {
+  color: #e5e7eb;
+  font-size: 0.9rem;
+}
+
+.chat-tool small {
+  color: #9ca3af;
+  font-size: 0.78rem;
 }
 
 .chat-options {

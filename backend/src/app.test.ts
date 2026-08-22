@@ -98,6 +98,7 @@ describe('API application', () => {
         api: 'responses',
         messages,
         model: 'alternate-model',
+        tools: ['web_search'],
         reasoningEffort: 'minimal',
         reasoningSummary: 'detailed',
         stream: false,
@@ -111,6 +112,7 @@ describe('API application', () => {
     expect(completeResponse).toHaveBeenCalledWith(
       messages,
       'alternate-model',
+      ['web_search'],
       'minimal',
       'detailed',
     );
@@ -133,6 +135,7 @@ describe('API application', () => {
         api: 'responses',
         messages,
         model: 'alternate-model',
+        tools: ['web_search'],
         reasoningEffort: 'low',
         reasoningSummary: 'concise',
         stream: true,
@@ -149,6 +152,7 @@ describe('API application', () => {
     expect(streamResponse).toHaveBeenCalledWith(
       messages,
       'alternate-model',
+      ['web_search'],
       'low',
       'concise',
       expect.any(AbortSignal),
@@ -201,6 +205,38 @@ describe('API application', () => {
         messages,
         model: 'default-model',
         stream: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported tools', async () => {
+    const completeResponse = vi.fn();
+    const response = await request(createApp({ completeResponse, models }))
+      .post('/api/chat')
+      .send({
+        api: 'responses',
+        messages,
+        model: 'default-model',
+        stream: false,
+        tools: ['file_search'],
+      });
+
+    expect(response.status).toBe(400);
+    expect(completeResponse).not.toHaveBeenCalled();
+  });
+
+  it('rejects Web search for Chat Completions', async () => {
+    const completeChat = vi.fn();
+    const response = await request(createApp({ completeChat, models }))
+      .post('/api/chat')
+      .send({
+        api: 'chat',
+        messages,
+        model: 'default-model',
+        stream: false,
+        tools: ['web_search'],
       });
 
     expect(response.status).toBe(400);
