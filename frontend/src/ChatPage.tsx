@@ -565,246 +565,257 @@ export function ChatPage() {
     <main className="app-shell">
       <section className="chat-card" aria-labelledby="chat-title">
         <header className="chat-header">
-          <div>
-            <p className="eyebrow">OPENAI CHAT PLAYGROUND</p>
-            <h1 id="chat-title">Chat with an LLM.</h1>
-            <p className="chat-intro">
-              Send a message using the{' '}
-              {api === 'chat' ? 'Chat Completions API' : 'Responses API'}.
-            </p>
-          </div>
+          <p className="eyebrow" id="chat-title">
+            OPENAI CHAT PLAYGROUND
+          </p>
         </header>
 
-        <fieldset className="chat-tools">
-          <legend>Tools</legend>
-          <label className={`chat-tool${api === 'chat' ? ' disabled' : ''}`}>
-            <input
-              aria-label="Web search"
-              checked={
-                api === 'responses' && selectedTools.includes('web_search')
-              }
-              disabled={isLoading || api === 'chat'}
-              onChange={(event) => handleWebSearchChange(event.target.checked)}
-              type="checkbox"
-            />
-            <span>
-              <strong>Web search</strong>
-              <small>
-                {api === 'chat'
-                  ? 'Unavailable with Chat Completions. Switch to Responses to enable.'
-                  : 'Give the model access to current information from the web.'}
-              </small>
-            </span>
-          </label>
-        </fieldset>
-
-        <section className="chat-options" aria-labelledby="options-title">
-          <div className="chat-options-heading">
-            <h2 id="options-title">Options</h2>
-            <p>Changes apply to the next response.</p>
-          </div>
-          <label className="chat-option" htmlFor="chat-model">
-            <span>Model</span>
-            <select
-              disabled={isLoading || isOptionsLoading || models.length === 0}
-              id="chat-model"
-              onChange={(event) => handleModelChange(event.target.value)}
-              value={selectedModel}
-            >
-              {isOptionsLoading && <option value="">Loading models…</option>}
-              {!isOptionsLoading && models.length === 0 && (
-                <option value="">No models available</option>
-              )}
-              {models.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="chat-option" htmlFor="chat-api">
-            <span>API</span>
-            <select
-              disabled={isLoading}
-              id="chat-api"
-              onChange={(event) =>
-                handleApiChange(event.target.value as ChatApi)
-              }
-              value={api}
-            >
-              <option value="chat">Chat Completions</option>
-              <option value="responses">Responses</option>
-            </select>
-          </label>
-          <label className="chat-option" htmlFor="response-delivery">
-            <span>Response delivery</span>
-            <select
-              disabled={isLoading}
-              id="response-delivery"
-              onChange={(event) =>
-                handleDeliveryChange(
-                  event.target.value as 'complete' | 'stream',
-                )
-              }
-              value={streaming ? 'stream' : 'complete'}
-            >
-              <option value="stream">Streaming</option>
-              <option value="complete">Complete</option>
-            </select>
-          </label>
-          <label className="chat-option" htmlFor="reasoning-effort">
-            <span>Reasoning effort</span>
-            <select
-              disabled={isLoading}
-              id="reasoning-effort"
-              onChange={(event) =>
-                handleReasoningEffortChange(
-                  event.target.value
-                    ? (event.target.value as ReasoningEffort)
-                    : null,
-                )
-              }
-              value={reasoningEffort ?? ''}
-            >
-              <option value="">Default</option>
-              <option value="none">None</option>
-              {api === 'responses' && <option value="minimal">Minimal</option>}
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="xhigh">Xhigh</option>
-              {api === 'responses' && <option value="max">Max</option>}
-            </select>
-          </label>
-          {api === 'responses' && (
-            <label className="chat-option" htmlFor="reasoning-summary">
-              <span>Reasoning summary</span>
-              <select
-                disabled={isLoading}
-                id="reasoning-summary"
-                onChange={(event) =>
-                  handleReasoningSummaryChange(
-                    event.target.value
-                      ? (event.target.value as ReasoningSummary)
-                      : null,
-                  )
-                }
-                value={reasoningSummary ?? ''}
-              >
-                <option value="">Default</option>
-                <option value="auto">Auto</option>
-                <option value="concise">Concise</option>
-                <option value="detailed">Detailed</option>
-              </select>
-            </label>
-          )}
-          {optionsError && (
-            <p className="options-error" role="alert">
-              {optionsError}
-            </p>
-          )}
-        </section>
-
-        <div
-          className="chat-messages"
-          aria-label="Conversation"
-          aria-live="polite"
-          onPointerDown={handleConversationPointerDown}
-          onScroll={handleConversationScroll}
-          onTouchStart={pauseAutoScroll}
-          onWheel={handleConversationWheel}
-          ref={messageListRef}
-        >
-          {messages.length === 0 && !isLoading && (
-            <div className="empty-chat">
-              <span className="empty-chat-icon" aria-hidden="true">
-                ✦
-              </span>
-              <p>Start a conversation</p>
-              <span>
-                Ask a question or share something you would like help with.
-              </span>
+        <div className="chat-layout">
+          <aside className="chat-sidebar" aria-labelledby="options-title">
+            <div className="chat-options-heading">
+              <h2 id="options-title">Options</h2>
+              <p>Changes apply to the next response.</p>
             </div>
-          )}
+            <section className="chat-options">
+              <label className="chat-option" htmlFor="chat-model">
+                <span>Model</span>
+                <select
+                  disabled={
+                    isLoading || isOptionsLoading || models.length === 0
+                  }
+                  id="chat-model"
+                  onChange={(event) => handleModelChange(event.target.value)}
+                  value={selectedModel}
+                >
+                  {isOptionsLoading && (
+                    <option value="">Loading models…</option>
+                  )}
+                  {!isOptionsLoading && models.length === 0 && (
+                    <option value="">No models available</option>
+                  )}
+                  {models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="chat-option" htmlFor="chat-api">
+                <span>API</span>
+                <select
+                  disabled={isLoading}
+                  id="chat-api"
+                  onChange={(event) =>
+                    handleApiChange(event.target.value as ChatApi)
+                  }
+                  value={api}
+                >
+                  <option value="chat">Chat Completions</option>
+                  <option value="responses">Responses</option>
+                </select>
+              </label>
+              <label className="chat-option" htmlFor="response-delivery">
+                <span>Response delivery</span>
+                <select
+                  disabled={isLoading}
+                  id="response-delivery"
+                  onChange={(event) =>
+                    handleDeliveryChange(
+                      event.target.value as 'complete' | 'stream',
+                    )
+                  }
+                  value={streaming ? 'stream' : 'complete'}
+                >
+                  <option value="stream">Streaming</option>
+                  <option value="complete">Complete</option>
+                </select>
+              </label>
+              <label className="chat-option" htmlFor="reasoning-effort">
+                <span>Reasoning effort</span>
+                <select
+                  disabled={isLoading}
+                  id="reasoning-effort"
+                  onChange={(event) =>
+                    handleReasoningEffortChange(
+                      event.target.value
+                        ? (event.target.value as ReasoningEffort)
+                        : null,
+                    )
+                  }
+                  value={reasoningEffort ?? ''}
+                >
+                  <option value="">Default</option>
+                  <option value="none">None</option>
+                  {api === 'responses' && (
+                    <option value="minimal">Minimal</option>
+                  )}
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="xhigh">Xhigh</option>
+                  {api === 'responses' && <option value="max">Max</option>}
+                </select>
+              </label>
+              {api === 'responses' && (
+                <label className="chat-option" htmlFor="reasoning-summary">
+                  <span>Reasoning summary</span>
+                  <select
+                    disabled={isLoading}
+                    id="reasoning-summary"
+                    onChange={(event) =>
+                      handleReasoningSummaryChange(
+                        event.target.value
+                          ? (event.target.value as ReasoningSummary)
+                          : null,
+                      )
+                    }
+                    value={reasoningSummary ?? ''}
+                  >
+                    <option value="">Default</option>
+                    <option value="auto">Auto</option>
+                    <option value="concise">Concise</option>
+                    <option value="detailed">Detailed</option>
+                  </select>
+                </label>
+              )}
+              {optionsError && (
+                <p className="options-error" role="alert">
+                  {optionsError}
+                </p>
+              )}
+            </section>
 
-          {messages.map((message, index) =>
-            message.role === 'reasoning-summary' ? (
-              <details
-                className="chat-reasoning-summary"
-                key={`${message.role}-${index}`}
-                open
+            <fieldset className="chat-tools">
+              <legend>Tools</legend>
+              <label
+                className={`chat-tool${api === 'chat' ? ' disabled' : ''}`}
               >
-                <summary>Reasoning summary</summary>
-                <div className="chat-reasoning-summary-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {message.content}
-                  </ReactMarkdown>
-                </div>
-              </details>
-            ) : (
-              <article
-                className={`chat-message ${message.role}`}
-                key={`${message.role}-${index}`}
-              >
-                <span className="message-role">
-                  {message.role === 'user' ? 'You' : 'Assistant'}
+                <input
+                  aria-label="Web search"
+                  checked={
+                    api === 'responses' && selectedTools.includes('web_search')
+                  }
+                  disabled={isLoading || api === 'chat'}
+                  onChange={(event) =>
+                    handleWebSearchChange(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Web search</strong>
+                  <small>
+                    {api === 'chat'
+                      ? 'Unavailable with Chat Completions. Switch to Responses to enable.'
+                      : 'Give the model access to current information from the web.'}
+                  </small>
                 </span>
-                {message.role === 'assistant' ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {message.content}
-                  </ReactMarkdown>
-                ) : (
-                  <p>{message.content}</p>
-                )}
-              </article>
-            ),
-          )}
+              </label>
+            </fieldset>
+          </aside>
 
-          {isLoading &&
-            messages[messages.length - 1]?.role !== 'assistant' &&
-            messages[messages.length - 1]?.role !== 'reasoning-summary' && (
-              <article className="chat-message assistant" role="status">
-                <span className="message-role">Assistant</span>
-                <p className="thinking">Thinking…</p>
-              </article>
-            )}
-        </div>
-
-        <div className="composer-dock">
-          {error && (
-            <p className="chat-error" role="alert">
-              {error}
-            </p>
-          )}
-
-          <form className="chat-composer" onSubmit={sendMessage}>
-            <label className="sr-only" htmlFor="chat-input">
-              Message
-            </label>
-            <textarea
-              disabled={isLoading || isOptionsLoading || !selectedModel}
-              id="chat-input"
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message the assistant…"
-              rows={1}
-              value={draft}
-            />
-            <button
-              disabled={
-                isLoading ||
-                isOptionsLoading ||
-                !selectedModel ||
-                draft.trim().length === 0
-              }
-              type="submit"
+          <section className="chat-main" aria-label="Chat">
+            <div
+              className="chat-messages"
+              aria-label="Conversation"
+              aria-live="polite"
+              onPointerDown={handleConversationPointerDown}
+              onScroll={handleConversationScroll}
+              onTouchStart={pauseAutoScroll}
+              onWheel={handleConversationWheel}
+              ref={messageListRef}
             >
-              {isLoading ? 'Sending…' : 'Send'}
-            </button>
-          </form>
-          <p className="composer-hint">
-            Enter to send · Shift + Enter for a new line
-          </p>
+              {messages.length === 0 && !isLoading && (
+                <div className="empty-chat">
+                  <span className="empty-chat-icon" aria-hidden="true">
+                    ✦
+                  </span>
+                  <p>Start a conversation</p>
+                  <span>
+                    Ask a question or share something you would like help with.
+                  </span>
+                </div>
+              )}
+
+              {messages.map((message, index) =>
+                message.role === 'reasoning-summary' ? (
+                  <details
+                    className="chat-reasoning-summary"
+                    key={`${message.role}-${index}`}
+                    open
+                  >
+                    <summary>Reasoning summary</summary>
+                    <div className="chat-reasoning-summary-content">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                  </details>
+                ) : (
+                  <article
+                    className={`chat-message ${message.role}`}
+                    key={`${message.role}-${index}`}
+                  >
+                    <span className="message-role">
+                      {message.role === 'user' ? 'You' : 'Assistant'}
+                    </span>
+                    {message.role === 'assistant' ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.content}
+                      </ReactMarkdown>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </article>
+                ),
+              )}
+
+              {isLoading &&
+                messages[messages.length - 1]?.role !== 'assistant' &&
+                messages[messages.length - 1]?.role !== 'reasoning-summary' && (
+                  <article className="chat-message assistant" role="status">
+                    <span className="message-role">Assistant</span>
+                    <p className="thinking">Thinking…</p>
+                  </article>
+                )}
+            </div>
+
+            <div className="composer-dock">
+              {error && (
+                <p className="chat-error" role="alert">
+                  {error}
+                </p>
+              )}
+
+              <form className="chat-composer" onSubmit={sendMessage}>
+                <label className="sr-only" htmlFor="chat-input">
+                  Message
+                </label>
+                <textarea
+                  disabled={isLoading || isOptionsLoading || !selectedModel}
+                  id="chat-input"
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Message the assistant…"
+                  rows={1}
+                  value={draft}
+                />
+                <button
+                  disabled={
+                    isLoading ||
+                    isOptionsLoading ||
+                    !selectedModel ||
+                    draft.trim().length === 0
+                  }
+                  type="submit"
+                >
+                  {isLoading ? 'Sending…' : 'Send'}
+                </button>
+              </form>
+              <p className="composer-hint">
+                Enter to send · Shift + Enter for a new line
+              </p>
+            </div>
+          </section>
         </div>
       </section>
     </main>

@@ -111,14 +111,15 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(
-      screen.getByRole('heading', { name: 'Chat with an LLM.' }),
-    ).toBeInTheDocument();
+    expect(screen.getByText('OPENAI CHAT PLAYGROUND')).toBeInTheDocument();
     expect(screen.getByLabelText('Message')).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
     );
     expect(screen.getByLabelText('API')).toHaveValue('chat');
+    expect(
+      screen.getByRole('complementary', { name: 'Options' }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText('Web search')).toBeDisabled();
     expect(screen.getByLabelText('Reasoning effort')).toHaveValue('');
   });
