@@ -58,8 +58,8 @@ describe('API application', () => {
   it('streams Chat Completions response chunks', async () => {
     const streamChat = vi.fn().mockResolvedValue({
       stream: (async function* () {
-        yield 'Hello ';
-        yield 'from Chat Completions.';
+        yield { content: 'Hello ', type: 'delta' as const };
+        yield { content: 'from Chat Completions.', type: 'delta' as const };
       })(),
     });
     const response = await request(createApp({ models, streamChat }))
@@ -87,10 +87,11 @@ describe('API application', () => {
     );
   });
 
-  it('returns a complete Responses API response', async () => {
-    const completeResponse = vi
-      .fn()
-      .mockResolvedValue({ content: 'Responses response.' });
+  it('returns a complete Responses API response and reasoning summary', async () => {
+    const completeResponse = vi.fn().mockResolvedValue({
+      content: 'Responses response.',
+      reasoningSummary: 'The model considered the relevant facts.',
+    });
     const response = await request(createApp({ completeResponse, models }))
       .post('/api/chat')
       .send({
@@ -98,25 +99,32 @@ describe('API application', () => {
         messages,
         model: 'alternate-model',
         reasoningEffort: 'minimal',
+        reasoningSummary: 'detailed',
         stream: false,
       });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       message: { content: 'Responses response.', role: 'assistant' },
+      reasoningSummary: 'The model considered the relevant facts.',
     });
     expect(completeResponse).toHaveBeenCalledWith(
       messages,
       'alternate-model',
       'minimal',
+      'detailed',
     );
   });
 
   it('streams Responses API response chunks', async () => {
     const streamResponse = vi.fn().mockResolvedValue({
       stream: (async function* () {
-        yield 'Hello ';
-        yield 'from Responses.';
+        yield {
+          content: 'The model considered ',
+          type: 'reasoning_summary' as const,
+        };
+        yield { content: 'Hello ', type: 'delta' as const };
+        yield { content: 'from Responses.', type: 'delta' as const };
       })(),
     });
     const response = await request(createApp({ models, streamResponse }))
@@ -126,13 +134,15 @@ describe('API application', () => {
         messages,
         model: 'alternate-model',
         reasoningEffort: 'low',
+        reasoningSummary: 'concise',
         stream: true,
       });
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
     expect(response.text).toBe(
-      'data: {"content":"Hello ","type":"delta"}\n\n' +
+      'data: {"content":"The model considered ","type":"reasoning_summary"}\n\n' +
+        'data: {"content":"Hello ","type":"delta"}\n\n' +
         'data: {"content":"from Responses.","type":"delta"}\n\n' +
         'data: {"type":"done"}\n\n',
     );
@@ -140,6 +150,7 @@ describe('API application', () => {
       messages,
       'alternate-model',
       'low',
+      'concise',
       expect.any(AbortSignal),
     );
   });
@@ -148,7 +159,7 @@ describe('API application', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const streamChat = vi.fn().mockResolvedValue({
       stream: (async function* () {
-        yield 'Partial response.';
+        yield { content: 'Partial response.', type: 'delta' as const };
         throw new Error('The stream stopped.');
       })(),
     });
@@ -189,6 +200,22 @@ describe('API application', () => {
         api: 'unknown',
         messages,
         model: 'default-model',
+        stream: false,
+      });
+
+    expect(response.status).toBe(400);
+    expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reasoning summary for Chat Completions', async () => {
+    const completeChat = vi.fn();
+    const response = await request(createApp({ completeChat, models }))
+      .post('/api/chat')
+      .send({
+        api: 'chat',
+        messages,
+        model: 'default-model',
+        reasoningSummary: 'auto',
         stream: false,
       });
 

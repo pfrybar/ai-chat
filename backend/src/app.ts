@@ -10,7 +10,11 @@ import {
   type ChatStreamResult,
   type ReasoningEffort,
 } from './chat.js';
-import { completeResponse, streamResponse } from './responses.js';
+import {
+  completeResponse,
+  streamResponse,
+  type ReasoningSummary,
+} from './responses.js';
 
 const validRoles = new Set<ChatRole>(['system', 'user', 'assistant']);
 const validApis = new Set<ChatApi>(['chat', 'responses']);
@@ -35,24 +39,37 @@ const maxMessageLength = 50_000;
 const requestBodyLimit = '128kb';
 
 type ChatApi = 'chat' | 'responses';
-type CompleteService = (
+type ChatCompleteService = (
   messages: ChatMessage[],
   model: string,
   reasoningEffort: ReasoningEffort | null,
 ) => Promise<ChatResult>;
-type StreamService = (
+type ChatStreamService = (
   messages: ChatMessage[],
   model: string,
   reasoningEffort: ReasoningEffort | null,
   signal?: AbortSignal,
 ) => Promise<ChatStreamResult>;
+type ResponseCompleteService = (
+  messages: ChatMessage[],
+  model: string,
+  reasoningEffort: ReasoningEffort | null,
+  reasoningSummary: ReasoningSummary | null,
+) => Promise<ChatResult>;
+type ResponseStreamService = (
+  messages: ChatMessage[],
+  model: string,
+  reasoningEffort: ReasoningEffort | null,
+  reasoningSummary: ReasoningSummary | null,
+  signal?: AbortSignal,
+) => Promise<ChatStreamResult>;
 
 export interface AppOptions {
-  completeChat?: CompleteService;
-  completeResponse?: CompleteService;
+  completeChat?: ChatCompleteService;
+  completeResponse?: ResponseCompleteService;
   models?: string[];
-  streamChat?: StreamService;
-  streamResponse?: StreamService;
+  streamChat?: ChatStreamService;
+  streamResponse?: ResponseStreamService;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,6 +127,29 @@ function parseReasoningEffort(
   return value as ReasoningEffort;
 }
 
+const validReasoningSummaries = new Set<ReasoningSummary>([
+  'auto',
+  'concise',
+  'detailed',
+]);
+
+function parseReasoningSummary(
+  value: unknown,
+): ReasoningSummary | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (
+    typeof value !== 'string' ||
+    !validReasoningSummaries.has(value as ReasoningSummary)
+  ) {
+    return undefined;
+  }
+
+  return value as ReasoningSummary;
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
@@ -124,6 +164,7 @@ function sendEvent(
   response: express.Response,
   event:
     | { type: 'delta'; content: string }
+    | { type: 'reasoning_summary'; content: string }
     | { type: 'done' }
     | { type: 'error'; error: string },
 ) {
@@ -152,14 +193,21 @@ async function streamToResponse(
 
     let hasContent = false;
 
-    for await (const content of result.stream) {
+    for await (const chunk of result.stream) {
       if (response.destroyed) {
         return;
       }
 
-      if (content) {
-        hasContent = true;
-        sendEvent(response, { content, type: 'delta' });
+      if (chunk.content) {
+        if (chunk.type === 'delta') {
+          hasContent = true;
+          sendEvent(response, { content: chunk.content, type: 'delta' });
+        } else {
+          sendEvent(response, {
+            content: chunk.content,
+            type: 'reasoning_summary',
+          });
+        }
       }
     }
 
@@ -198,6 +246,9 @@ async function completeToResponse(
         content: result.content,
         role: 'assistant',
       },
+      ...(result.reasoningSummary
+        ? { reasoningSummary: result.reasoningSummary }
+        : {}),
     });
   } catch (error) {
     console.error(`${logLabel} failed:`, error);
@@ -237,6 +288,9 @@ export function createApp(options: AppOptions = {}) {
     const reasoningEffort = isRecord(request.body)
       ? parseReasoningEffort(request.body.reasoningEffort)
       : undefined;
+    const reasoningSummary = isRecord(request.body)
+      ? parseReasoningSummary(request.body.reasoningSummary)
+      : undefined;
     const stream = isRecord(request.body) ? request.body.stream : null;
 
     if (
@@ -246,9 +300,11 @@ export function createApp(options: AppOptions = {}) {
       typeof model !== 'string' ||
       !models.includes(model) ||
       reasoningEffort === undefined ||
+      reasoningSummary === undefined ||
       (api === 'chat' &&
-        reasoningEffort !== null &&
-        !validChatReasoningEfforts.has(reasoningEffort)) ||
+        (reasoningSummary !== null ||
+          (reasoningEffort !== null &&
+            !validChatReasoningEfforts.has(reasoningEffort)))) ||
       typeof stream !== 'boolean'
     ) {
       response.status(400).json({ error: 'Invalid chat request.' });
@@ -265,7 +321,13 @@ export function createApp(options: AppOptions = {}) {
         (signal) =>
           chatApi === 'chat'
             ? services.streamChat(messages, model, reasoningEffort, signal)
-            : services.streamResponse(messages, model, reasoningEffort, signal),
+            : services.streamResponse(
+                messages,
+                model,
+                reasoningEffort,
+                reasoningSummary,
+                signal,
+              ),
         logLabel,
       );
       return;
@@ -276,7 +338,12 @@ export function createApp(options: AppOptions = {}) {
       () =>
         chatApi === 'chat'
           ? services.completeChat(messages, model, reasoningEffort)
-          : services.completeResponse(messages, model, reasoningEffort),
+          : services.completeResponse(
+              messages,
+              model,
+              reasoningEffort,
+              reasoningSummary,
+            ),
       logLabel,
     );
   });

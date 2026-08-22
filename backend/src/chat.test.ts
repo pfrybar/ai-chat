@@ -17,7 +17,12 @@ const { createCompletion, OpenAIClient } = vi.hoisted(() => {
 
 vi.mock('openai', () => ({ default: OpenAIClient }));
 
-import { completeChat, getChatModels, streamChat } from './chat.js';
+import {
+  completeChat,
+  getChatModels,
+  streamChat,
+  type ChatStreamChunk,
+} from './chat.js';
 
 describe('Chat Completions client', () => {
   afterEach(() => {
@@ -72,13 +77,17 @@ describe('Chat Completions client', () => {
       'low',
       signal,
     );
-    const chunks: string[] = [];
+    const chunks: ChatStreamChunk[] = [];
 
     for await (const chunk of result.stream) {
       chunks.push(chunk);
     }
 
-    expect(chunks).toEqual(['Hello ', 'as it ', 'arrives.']);
+    expect(chunks).toEqual([
+      { content: 'Hello ', type: 'delta' },
+      { content: 'as it ', type: 'delta' },
+      { content: 'arrives.', type: 'delta' },
+    ]);
     expect(createCompletion).toHaveBeenCalledWith(
       {
         messages: [{ content: 'Hello', role: 'user' }],

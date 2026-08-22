@@ -38,6 +38,10 @@ The available efforts differ by API:
 - Chat Completions: `none`, `low`, `medium`, `high`, and `xhigh`.
 - Responses: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
 
+### Reasoning summaries
+
+The Responses API can optionally return a reasoning summary in `auto`, `concise`, or `detailed` mode. This playground streams those summaries into a collapsible response card and includes them with complete responses. The summary option is Responses-only: OpenAI's [reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries) documents it as `reasoning.summary` on Responses API requests, while the Chat Completions reference has no corresponding summary parameter. Summaries are not raw reasoning tokens.
+
 ## Commands
 
 ```bash

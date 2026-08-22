@@ -1,27 +1,61 @@
-import type { ResponseInput } from 'openai/resources/responses/responses';
+import type {
+  Response as OpenAIResponse,
+  ResponseInput,
+  ResponseReasoningItem,
+} from 'openai/resources/responses/responses';
 
 import type {
   ChatMessage,
   ChatResult,
+  ChatStreamChunk,
   ChatStreamResult,
   ReasoningEffort,
 } from './chat.js';
 import { createOpenAIClient } from './openai.js';
 
+export type ReasoningSummary = 'auto' | 'concise' | 'detailed';
+
 function toResponseInput(messages: ChatMessage[]): ResponseInput {
   return messages.map(({ content, role }) => ({ content, role }));
+}
+
+function toReasoning(
+  reasoningEffort: ReasoningEffort | null,
+  reasoningSummary: ReasoningSummary | null,
+) {
+  if (!reasoningEffort && !reasoningSummary) {
+    return undefined;
+  }
+
+  return {
+    ...(reasoningEffort ? { effort: reasoningEffort } : {}),
+    ...(reasoningSummary ? { summary: reasoningSummary } : {}),
+  };
+}
+
+function getReasoningSummary(response: OpenAIResponse): string | undefined {
+  const summaryParts = (response.output ?? [])
+    .filter((item): item is ResponseReasoningItem => item.type === 'reasoning')
+    .flatMap((item) => item.summary ?? [])
+    .map((part) => part.text.trim())
+    .filter(Boolean);
+
+  return summaryParts.length > 0 ? summaryParts.join('\n\n') : undefined;
 }
 
 export async function completeResponse(
   messages: ChatMessage[],
   model: string,
   reasoningEffort: ReasoningEffort | null,
+  reasoningSummary: ReasoningSummary | null,
 ): Promise<ChatResult> {
   const client = createOpenAIClient();
   const response = await client.responses.create({
     input: toResponseInput(messages),
     model,
-    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+    ...(toReasoning(reasoningEffort, reasoningSummary)
+      ? { reasoning: toReasoning(reasoningEffort, reasoningSummary) }
+      : {}),
     store: false,
   });
   const content = response.output_text;
@@ -30,13 +64,19 @@ export async function completeResponse(
     throw new Error('The model returned an empty response.');
   }
 
-  return { content };
+  const summary = getReasoningSummary(response);
+
+  return {
+    content,
+    ...(summary ? { reasoningSummary: summary } : {}),
+  };
 }
 
 export async function streamResponse(
   messages: ChatMessage[],
   model: string,
   reasoningEffort: ReasoningEffort | null,
+  reasoningSummary: ReasoningSummary | null,
   signal?: AbortSignal,
 ): Promise<ChatStreamResult> {
   const client = createOpenAIClient();
@@ -44,7 +84,9 @@ export async function streamResponse(
     {
       input: toResponseInput(messages),
       model,
-      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+      ...(toReasoning(reasoningEffort, reasoningSummary)
+        ? { reasoning: toReasoning(reasoningEffort, reasoningSummary) }
+        : {}),
       store: false,
       stream: true,
     },
@@ -53,9 +95,32 @@ export async function streamResponse(
 
   return {
     stream: (async function* () {
+      const summaryPartsWithDeltas = new Set<number>();
+
       for await (const event of responseStream) {
         if (event.type === 'response.output_text.delta' && event.delta) {
-          yield event.delta;
+          yield {
+            content: event.delta,
+            type: 'delta',
+          } satisfies ChatStreamChunk;
+        } else if (
+          event.type === 'response.reasoning_summary_text.delta' &&
+          event.delta
+        ) {
+          summaryPartsWithDeltas.add(event.summary_index);
+          yield {
+            content: event.delta,
+            type: 'reasoning_summary',
+          } satisfies ChatStreamChunk;
+        } else if (
+          event.type === 'response.reasoning_summary_text.done' &&
+          !summaryPartsWithDeltas.has(event.summary_index) &&
+          event.text
+        ) {
+          yield {
+            content: event.text,
+            type: 'reasoning_summary',
+          } satisfies ChatStreamChunk;
         }
       }
     })(),

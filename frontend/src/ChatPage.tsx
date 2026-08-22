@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type ChatApi = 'chat' | 'responses';
+type ReasoningSummary = 'auto' | 'concise' | 'detailed';
 type ReasoningEffort =
   'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -37,6 +38,13 @@ interface ChatMessage {
   content: string;
 }
 
+interface ChatReasoningSummary {
+  role: 'reasoning-summary';
+  content: string;
+}
+
+type ChatItem = ChatMessage | ChatReasoningSummary;
+
 interface ApiErrorResponse {
   error?: string;
   details?: string;
@@ -46,6 +54,7 @@ interface ChatResponse extends ApiErrorResponse {
   message?: {
     content?: string;
   };
+  reasoningSummary?: string;
 }
 
 interface ChatOptionsResponse extends ApiErrorResponse {
@@ -55,11 +64,16 @@ interface ChatOptionsResponse extends ApiErrorResponse {
 
 type ChatStreamEvent =
   | { type: 'delta'; content: string }
+  | { type: 'reasoning_summary'; content: string }
   | { type: 'done' }
   | { type: 'error'; error: string };
 
 function formatApiError(error: string, details?: string) {
   return [error, details].filter(Boolean).join('\n\n');
+}
+
+function isChatMessage(item: ChatItem): item is ChatMessage {
+  return item.role === 'user' || item.role === 'assistant';
 }
 
 function getInitialApiOption(): ChatApi {
@@ -85,6 +99,15 @@ function getInitialReasoningEffort(): ReasoningEffort | null {
     : null;
 }
 
+function getInitialReasoningSummary(): ReasoningSummary | null {
+  const summary = new URLSearchParams(window.location.search).get('summary');
+
+  return getInitialApiOption() === 'responses' &&
+    (summary === 'auto' || summary === 'concise' || summary === 'detailed')
+    ? summary
+    : null;
+}
+
 function getInitialStreamingOption() {
   return (
     new URLSearchParams(window.location.search).get('delivery') !== 'complete'
@@ -92,7 +115,7 @@ function getInitialStreamingOption() {
 }
 
 function setOptionQueryParameter(
-  name: 'api' | 'delivery' | 'model' | 'reasoning',
+  name: 'api' | 'delivery' | 'model' | 'reasoning' | 'summary',
   value: string | null,
 ) {
   const url = new URL(window.location.href);
@@ -136,6 +159,7 @@ async function readApiResponse<T extends object>(
 async function consumeChatStream(
   response: Response,
   onDelta: (content: string) => void,
+  onReasoningSummary: (content: string) => void,
 ) {
   if (!response.body) {
     throw new Error('The API did not provide a response stream.');
@@ -177,6 +201,11 @@ async function consumeChatStream(
 
     if (event.type === 'delta' && typeof event.content === 'string') {
       onDelta(event.content);
+    } else if (
+      event.type === 'reasoning_summary' &&
+      typeof event.content === 'string'
+    ) {
+      onReasoningSummary(event.content);
     } else if (event.type === 'error' && typeof event.error === 'string') {
       throw new Error(event.error);
     } else if (event.type === 'done') {
@@ -217,11 +246,13 @@ async function consumeChatStream(
 
 export function ChatPage() {
   const [api, setApi] = useState<ChatApi>(getInitialApiOption);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatItem[]>([]);
   const [draft, setDraft] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [reasoningEffort, setReasoningEffort] =
     useState<ReasoningEffort | null>(getInitialReasoningEffort);
+  const [reasoningSummary, setReasoningSummary] =
+    useState<ReasoningSummary | null>(getInitialReasoningSummary);
   const [streaming, setStreaming] = useState(getInitialStreamingOption);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
@@ -315,13 +346,14 @@ export function ChatPage() {
       return;
     }
 
+    const userMessage: ChatMessage = { content, role: 'user' };
     const nextMessages: ChatMessage[] = [
-      ...messages,
-      { content, role: 'user' },
+      ...messages.filter(isChatMessage),
+      userMessage,
     ];
 
     shouldAutoScrollRef.current = true;
-    setMessages(nextMessages);
+    setMessages((currentMessages) => [...currentMessages, userMessage]);
     setDraft('');
     setError(null);
     setIsLoading(true);
@@ -333,6 +365,9 @@ export function ChatPage() {
           messages: nextMessages,
           model: selectedModel,
           ...(reasoningEffort ? { reasoningEffort } : {}),
+          ...(api === 'responses' && reasoningSummary
+            ? { reasoningSummary }
+            : {}),
           stream: streaming,
         }),
         headers: { 'Content-Type': 'application/json' },
@@ -351,7 +386,11 @@ export function ChatPage() {
       }
 
       if (streaming) {
-        await consumeChatStream(response, appendAssistantDelta);
+        await consumeChatStream(
+          response,
+          appendAssistantDelta,
+          appendReasoningSummary,
+        );
       } else {
         const data = await readApiResponse<ChatResponse>(response);
         const assistantContent = data.message?.content;
@@ -362,6 +401,14 @@ export function ChatPage() {
 
         setMessages((currentMessages) => [
           ...currentMessages,
+          ...(data.reasoningSummary
+            ? [
+                {
+                  content: data.reasoningSummary,
+                  role: 'reasoning-summary' as const,
+                },
+              ]
+            : []),
           { content: assistantContent, role: 'assistant' },
         ]);
       }
@@ -391,16 +438,36 @@ export function ChatPage() {
     });
   }
 
+  function appendReasoningSummary(content: string) {
+    setMessages((currentMessages) => {
+      const lastMessage = currentMessages[currentMessages.length - 1];
+
+      if (lastMessage?.role === 'reasoning-summary') {
+        return [
+          ...currentMessages.slice(0, -1),
+          { ...lastMessage, content: lastMessage.content + content },
+        ];
+      }
+
+      return [...currentMessages, { content, role: 'reasoning-summary' }];
+    });
+  }
+
   function handleApiChange(nextApi: ChatApi) {
     setApi(nextApi);
     setOptionQueryParameter('api', nextApi);
 
-    if (
-      nextApi === 'chat' &&
-      reasoningEffort !== null &&
-      !chatReasoningEfforts.has(reasoningEffort)
-    ) {
-      handleReasoningEffortChange(null);
+    if (nextApi === 'chat') {
+      if (
+        reasoningEffort !== null &&
+        !chatReasoningEfforts.has(reasoningEffort)
+      ) {
+        handleReasoningEffortChange(null);
+      }
+
+      if (reasoningSummary !== null) {
+        handleReasoningSummaryChange(null);
+      }
     }
   }
 
@@ -414,6 +481,11 @@ export function ChatPage() {
   ) {
     setReasoningEffort(nextReasoningEffort);
     setOptionQueryParameter('reasoning', nextReasoningEffort);
+  }
+
+  function handleReasoningSummaryChange(nextSummary: ReasoningSummary | null) {
+    setReasoningSummary(nextSummary);
+    setOptionQueryParameter('summary', nextSummary);
   }
 
   function handleDeliveryChange(delivery: 'complete' | 'stream') {
@@ -516,6 +588,22 @@ export function ChatPage() {
               <option value="responses">Responses</option>
             </select>
           </label>
+          <label className="chat-option" htmlFor="response-delivery">
+            <span>Response delivery</span>
+            <select
+              disabled={isLoading}
+              id="response-delivery"
+              onChange={(event) =>
+                handleDeliveryChange(
+                  event.target.value as 'complete' | 'stream',
+                )
+              }
+              value={streaming ? 'stream' : 'complete'}
+            >
+              <option value="stream">Streaming</option>
+              <option value="complete">Complete</option>
+            </select>
+          </label>
           <label className="chat-option" htmlFor="reasoning-effort">
             <span>Reasoning effort</span>
             <select
@@ -540,22 +628,28 @@ export function ChatPage() {
               {api === 'responses' && <option value="max">Max</option>}
             </select>
           </label>
-          <label className="chat-option" htmlFor="response-delivery">
-            <span>Response delivery</span>
-            <select
-              disabled={isLoading}
-              id="response-delivery"
-              onChange={(event) =>
-                handleDeliveryChange(
-                  event.target.value as 'complete' | 'stream',
-                )
-              }
-              value={streaming ? 'stream' : 'complete'}
-            >
-              <option value="stream">Streaming</option>
-              <option value="complete">Complete</option>
-            </select>
-          </label>
+          {api === 'responses' && (
+            <label className="chat-option" htmlFor="reasoning-summary">
+              <span>Reasoning summary</span>
+              <select
+                disabled={isLoading}
+                id="reasoning-summary"
+                onChange={(event) =>
+                  handleReasoningSummaryChange(
+                    event.target.value
+                      ? (event.target.value as ReasoningSummary)
+                      : null,
+                  )
+                }
+                value={reasoningSummary ?? ''}
+              >
+                <option value="">Default</option>
+                <option value="auto">Auto</option>
+                <option value="concise">Concise</option>
+                <option value="detailed">Detailed</option>
+              </select>
+            </label>
+          )}
           {optionsError && (
             <p className="options-error" role="alert">
               {optionsError}
@@ -585,30 +679,47 @@ export function ChatPage() {
             </div>
           )}
 
-          {messages.map((message, index) => (
-            <article
-              className={`chat-message ${message.role}`}
-              key={`${message.role}-${index}`}
-            >
-              <span className="message-role">
-                {message.role === 'user' ? 'You' : 'Assistant'}
-              </span>
-              {message.role === 'assistant' ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {message.content}
-                </ReactMarkdown>
-              ) : (
-                <p>{message.content}</p>
-              )}
-            </article>
-          ))}
-
-          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-            <article className="chat-message assistant" role="status">
-              <span className="message-role">Assistant</span>
-              <p className="thinking">Thinking…</p>
-            </article>
+          {messages.map((message, index) =>
+            message.role === 'reasoning-summary' ? (
+              <details
+                className="chat-reasoning-summary"
+                key={`${message.role}-${index}`}
+                open
+              >
+                <summary>Reasoning summary</summary>
+                <div className="chat-reasoning-summary-content">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
+              </details>
+            ) : (
+              <article
+                className={`chat-message ${message.role}`}
+                key={`${message.role}-${index}`}
+              >
+                <span className="message-role">
+                  {message.role === 'user' ? 'You' : 'Assistant'}
+                </span>
+                {message.role === 'assistant' ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.content}
+                  </ReactMarkdown>
+                ) : (
+                  <p>{message.content}</p>
+                )}
+              </article>
+            ),
           )}
+
+          {isLoading &&
+            messages[messages.length - 1]?.role !== 'assistant' &&
+            messages[messages.length - 1]?.role !== 'reasoning-summary' && (
+              <article className="chat-message assistant" role="status">
+                <span className="message-role">Assistant</span>
+                <p className="thinking">Thinking…</p>
+              </article>
+            )}
         </div>
 
         <div className="composer-dock">

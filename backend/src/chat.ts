@@ -13,10 +13,15 @@ export interface ChatMessage {
 
 export interface ChatResult {
   content: string;
+  reasoningSummary?: string;
 }
 
+export type ChatStreamChunk =
+  | { type: 'delta'; content: string }
+  | { type: 'reasoning_summary'; content: string };
+
 export interface ChatStreamResult {
-  stream: AsyncIterable<string>;
+  stream: AsyncIterable<ChatStreamChunk>;
 }
 
 export function getChatModels() {
@@ -73,7 +78,7 @@ export async function streamChat(
         const content = chunk.choices[0]?.delta.content;
 
         if (content) {
-          yield content;
+          yield { content, type: 'delta' } satisfies ChatStreamChunk;
         }
       }
     })(),

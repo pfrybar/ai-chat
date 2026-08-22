@@ -211,6 +211,31 @@ textarea:focus-visible {
   line-height: 1.5;
 }
 
+.chat-reasoning-summary {
+  width: min(80%, 42rem);
+  padding: 0.85rem 1rem;
+  border: 1px solid #334155;
+  border-radius: 1rem;
+  color: #cbd5e1;
+  background: #172033;
+  overflow-wrap: anywhere;
+}
+
+.chat-reasoning-summary summary {
+  cursor: pointer;
+  color: #93c5fd;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.chat-reasoning-summary-content > :first-child {
+  margin-top: 0.75rem;
+}
+
+.chat-reasoning-summary-content > :last-child {
+  margin-bottom: 0;
+}
+
 .chat-message {
   width: fit-content;
   max-width: min(80%, 42rem);
@@ -454,7 +479,8 @@ textarea:focus-visible {
     max-width: 90%;
   }
 
-  .chat-message.assistant {
+  .chat-message.assistant,
+  .chat-reasoning-summary {
     width: 90%;
   }
 

@@ -23,10 +23,11 @@ function optionsResponse() {
   );
 }
 
-function chatResponse(content: string) {
+function chatResponse(content: string, reasoningSummary?: string) {
   return new Response(
     JSON.stringify({
       message: { content, role: 'assistant' },
+      ...(reasoningSummary ? { reasoningSummary } : {}),
     }),
     {
       headers: { 'Content-Type': 'application/json' },
@@ -47,6 +48,18 @@ function streamResponse(...chunks: string[]) {
     headers: { 'Content-Type': 'text/event-stream' },
     status: 200,
   });
+}
+
+function reasoningSummaryStreamResponse(summary: string, content: string) {
+  return new Response(
+    `data: ${JSON.stringify({ content: summary, type: 'reasoning_summary' })}\n\n` +
+      `data: ${JSON.stringify({ content, type: 'delta' })}\n\n` +
+      `data: ${JSON.stringify({ type: 'done' })}\n\n`,
+    {
+      headers: { 'Content-Type': 'text/event-stream' },
+      status: 200,
+    },
+  );
 }
 
 function streamErrorResponse(content: string, error: string) {
@@ -113,7 +126,7 @@ describe('App', () => {
     window.history.replaceState(
       null,
       '',
-      '/?api=responses&model=alternate-model&reasoning=high&delivery=complete',
+      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&delivery=complete',
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
@@ -124,6 +137,7 @@ describe('App', () => {
     );
     expect(screen.getByLabelText('API')).toHaveValue('responses');
     expect(screen.getByLabelText('Reasoning effort')).toHaveValue('high');
+    expect(screen.getByLabelText('Reasoning summary')).toHaveValue('detailed');
     expect(screen.getByLabelText('Response delivery')).toHaveValue('complete');
   });
 
@@ -145,6 +159,9 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Reasoning effort'), {
       target: { value: 'xhigh' },
     });
+    fireEvent.change(screen.getByLabelText('Reasoning summary'), {
+      target: { value: 'concise' },
+    });
     fireEvent.change(screen.getByLabelText('Response delivery'), {
       target: { value: 'complete' },
     });
@@ -153,6 +170,7 @@ describe('App', () => {
     expect(query.get('api')).toBe('responses');
     expect(query.get('model')).toBe('alternate-model');
     expect(query.get('reasoning')).toBe('xhigh');
+    expect(query.get('summary')).toBe('concise');
     expect(query.get('delivery')).toBe('complete');
     expect(query.get('source')).toBe('test');
   });
@@ -283,6 +301,52 @@ describe('App', () => {
     );
   });
 
+  it('shows a streamed Responses API reasoning summary', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(
+        reasoningSummaryStreamResponse(
+          'The model compared the options.',
+          'A useful answer.',
+        ),
+      );
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
+    fireEvent.change(screen.getByLabelText('Reasoning summary'), {
+      target: { value: 'concise' },
+    });
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'Compare the options.' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(await screen.findByText('A useful answer.')).toBeInTheDocument();
+    expect(
+      screen.getByText('The model compared the options.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Reasoning summary', { selector: 'summary' }),
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/chat',
+      expect.objectContaining({
+        body: JSON.stringify({
+          api: 'responses',
+          messages: [{ content: 'Compare the options.', role: 'user' }],
+          model: 'default-model',
+          reasoningSummary: 'concise',
+          stream: true,
+        }),
+      }),
+    );
+  });
+
   it('follows streaming text at the bottom and stops after the user scrolls up', async () => {
     const stream = controlledStreamResponse();
     vi.spyOn(globalThis, 'fetch')
@@ -341,7 +405,12 @@ describe('App', () => {
   it('can request a complete response instead of a stream', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(optionsResponse())
-      .mockResolvedValueOnce(chatResponse('A complete response.'));
+      .mockResolvedValueOnce(
+        chatResponse(
+          'A complete response.',
+          'The model weighed the tradeoffs.',
+        ),
+      );
 
     render(<App />);
     await waitFor(() =>
@@ -349,6 +418,9 @@ describe('App', () => {
     );
     fireEvent.change(screen.getByLabelText('API'), {
       target: { value: 'responses' },
+    });
+    fireEvent.change(screen.getByLabelText('Reasoning summary'), {
+      target: { value: 'detailed' },
     });
     fireEvent.change(screen.getByLabelText('Response delivery'), {
       target: { value: 'complete' },
@@ -359,6 +431,9 @@ describe('App', () => {
     fireEvent.submit(input.closest('form')!);
 
     expect(await screen.findByText('A complete response.')).toBeInTheDocument();
+    expect(
+      screen.getByText('The model weighed the tradeoffs.'),
+    ).toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/chat',
       expect.objectContaining({
@@ -366,6 +441,7 @@ describe('App', () => {
           api: 'responses',
           messages: [{ content: 'Hello', role: 'user' }],
           model: 'default-model',
+          reasoningSummary: 'detailed',
           stream: false,
         }),
       }),
