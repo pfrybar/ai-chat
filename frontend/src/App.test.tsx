@@ -27,12 +27,14 @@ function chatResponse(
   content: string,
   reasoningSummary?: string,
   rawResponse?: unknown,
+  webSearchUpdates?: unknown,
 ) {
   return new Response(
     JSON.stringify({
       message: { content, role: 'assistant' },
       ...(rawResponse !== undefined ? { rawResponse } : {}),
       ...(reasoningSummary ? { reasoningSummary } : {}),
+      ...(webSearchUpdates !== undefined ? { webSearchUpdates } : {}),
     }),
     {
       headers: { 'Content-Type': 'application/json' },
@@ -75,6 +77,97 @@ function streamErrorResponse(content: string, error: string) {
   return new Response(
     `data: ${JSON.stringify({ content, type: 'delta' })}\n\n` +
       `data: ${JSON.stringify({ error, type: 'error' })}\n\n`,
+    {
+      headers: { 'Content-Type': 'text/event-stream' },
+      status: 200,
+    },
+  );
+}
+
+function webSearchStreamResponse() {
+  const events = [
+    {
+      type: 'web_search',
+      update: {
+        action: { query: 'latest news', type: 'search' },
+        itemId: 'ws_test',
+        status: 'in_progress',
+      },
+    },
+    {
+      type: 'web_search',
+      update: {
+        itemId: 'ws_test',
+        status: 'searching',
+      },
+    },
+    {
+      type: 'web_search',
+      update: {
+        action: {
+          query: 'latest news',
+          sources: [{ url: 'https://example.com/source' }],
+          type: 'search',
+        },
+        itemId: 'ws_test',
+        status: 'completed',
+      },
+    },
+    { content: 'Here is the result.', type: 'delta' },
+    {
+      rawResponse: [
+        {
+          item: {
+            action: {
+              query: 'latest news',
+              type: 'search',
+            },
+            id: 'ws_test',
+            status: 'completed',
+            type: 'web_search_call',
+          },
+          type: 'response.output_item.done',
+        },
+      ],
+      type: 'done',
+    },
+  ];
+
+  return new Response(
+    events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
+    {
+      headers: { 'Content-Type': 'text/event-stream' },
+      status: 200,
+    },
+  );
+}
+
+function interleavedWebSearchStreamResponse() {
+  const events = [
+    {
+      type: 'web_search',
+      update: {
+        action: { query: 'first search', type: 'search' },
+        itemId: 'ws_first',
+        status: 'completed',
+      },
+    },
+    { content: 'First reasoning.', type: 'reasoning_summary' },
+    {
+      type: 'web_search',
+      update: {
+        action: { query: 'second search', type: 'search' },
+        itemId: 'ws_second',
+        status: 'completed',
+      },
+    },
+    { content: 'Second reasoning.', type: 'reasoning_summary' },
+    { content: 'The answer.', type: 'delta' },
+    { type: 'done' },
+  ];
+
+  return new Response(
+    events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''),
     {
       headers: { 'Content-Type': 'text/event-stream' },
       status: 200,
@@ -317,6 +410,60 @@ describe('App', () => {
     );
   });
 
+  it('shows web search activity and sources while a response streams', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(webSearchStreamResponse());
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
+    fireEvent.click(screen.getByLabelText('Web search'));
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'What is new?' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(await screen.findByText('Here is the result.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Web search activity')).toBeInTheDocument();
+    expect(screen.getByText('Searched for “latest news”')).toBeInTheDocument();
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'example.com' })).toHaveAttribute(
+      'href',
+      'https://example.com/source',
+    );
+  });
+
+  it('keeps separate web searches separated by reasoning summaries', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(interleavedWebSearchStreamResponse());
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
+    fireEvent.click(screen.getByLabelText('Web search'));
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'Compare these results.' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(await screen.findByText('The answer.')).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Web search activity')).toHaveLength(2);
+    expect(screen.getByText('Searched for “first search”')).toBeInTheDocument();
+    expect(
+      screen.getByText('Searched for “second search”'),
+    ).toBeInTheDocument();
+  });
+
   it('shows a streamed Responses API reasoning summary', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(optionsResponse())
@@ -489,7 +636,30 @@ describe('App', () => {
               output_tokens: 7,
               output_tokens_details: { reasoning_tokens: 2 },
             },
+            output: [
+              {
+                action: {
+                  query: 'current facts',
+                  sources: [{ url: 'https://example.com/source' }],
+                  type: 'search',
+                },
+                id: 'ws_complete',
+                status: 'completed',
+                type: 'web_search_call',
+              },
+            ],
           },
+          [
+            {
+              action: {
+                query: 'current facts',
+                sources: [{ url: 'https://example.com/source' }],
+                type: 'search',
+              },
+              itemId: 'ws_complete',
+              status: 'completed',
+            },
+          ],
         ),
       );
 
@@ -514,6 +684,10 @@ describe('App', () => {
     expect(await screen.findByText('A complete response.')).toBeInTheDocument();
     expect(
       screen.getByText('The model weighed the tradeoffs.'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Web search activity')).toBeInTheDocument();
+    expect(
+      screen.getByText('Searched for “current facts”'),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('View token usage'));
     expect(screen.getByText('Input tokens')).toBeInTheDocument();

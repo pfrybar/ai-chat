@@ -125,6 +125,17 @@ describe('API application', () => {
       getRawResponse: () => [{ type: 'response.completed' }],
       stream: (async function* () {
         yield {
+          type: 'web_search' as const,
+          update: {
+            action: {
+              query: 'current facts about the topic',
+              type: 'search' as const,
+            },
+            itemId: 'ws_test',
+            status: 'searching' as const,
+          },
+        };
+        yield {
           content: 'The model considered ',
           type: 'reasoning_summary' as const,
         };
@@ -147,7 +158,8 @@ describe('API application', () => {
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
     expect(response.text).toBe(
-      'data: {"content":"The model considered ","type":"reasoning_summary"}\n\n' +
+      'data: {"type":"web_search","update":{"action":{"query":"current facts about the topic","type":"search"},"itemId":"ws_test","status":"searching"}}\n\n' +
+        'data: {"content":"The model considered ","type":"reasoning_summary"}\n\n' +
         'data: {"content":"Hello ","type":"delta"}\n\n' +
         'data: {"content":"from Responses.","type":"delta"}\n\n' +
         'data: {"rawResponse":[{"type":"response.completed"}],"type":"done"}\n\n',

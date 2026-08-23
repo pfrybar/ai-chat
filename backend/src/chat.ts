@@ -11,15 +11,41 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface WebSearchSource {
+  title?: string;
+  url: string;
+}
+
+export type WebSearchAction =
+  | {
+      type: 'search';
+      queries?: string[];
+      query?: string;
+      sources?: WebSearchSource[];
+    }
+  | { type: 'open_page'; url?: string | null }
+  | { type: 'find_in_page'; pattern: string; url: string };
+
+export type WebSearchStatus =
+  'in_progress' | 'searching' | 'completed' | 'failed';
+
+export interface WebSearchUpdate {
+  action?: WebSearchAction;
+  itemId: string;
+  status: WebSearchStatus;
+}
+
 export interface ChatResult {
   content: string;
   rawResponse?: unknown;
   reasoningSummary?: string;
+  webSearchUpdates?: WebSearchUpdate[];
 }
 
 export type ChatStreamChunk =
   | { type: 'delta'; content: string }
-  | { type: 'reasoning_summary'; content: string };
+  | { type: 'reasoning_summary'; content: string }
+  | { type: 'web_search'; update: WebSearchUpdate };
 
 export interface ChatStreamResult {
   getRawResponse?: () => unknown;

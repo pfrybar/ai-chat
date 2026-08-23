@@ -9,6 +9,7 @@ import {
   type ChatRole,
   type ChatStreamResult,
   type ReasoningEffort,
+  type WebSearchUpdate,
 } from './chat.js';
 import {
   completeResponse,
@@ -195,6 +196,7 @@ function sendEvent(
   event:
     | { type: 'delta'; content: string }
     | { type: 'reasoning_summary'; content: string }
+    | { type: 'web_search'; update: WebSearchUpdate }
     | { type: 'done'; rawResponse?: unknown }
     | { type: 'error'; error: string },
 ) {
@@ -228,7 +230,9 @@ async function streamToResponse(
         return;
       }
 
-      if (chunk.content) {
+      if (chunk.type === 'web_search') {
+        sendEvent(response, { type: 'web_search', update: chunk.update });
+      } else if (chunk.content) {
         if (chunk.type === 'delta') {
           hasContent = true;
           sendEvent(response, { content: chunk.content, type: 'delta' });
@@ -286,6 +290,9 @@ async function completeToResponse(
         : {}),
       ...(result.reasoningSummary
         ? { reasoningSummary: result.reasoningSummary }
+        : {}),
+      ...(result.webSearchUpdates && result.webSearchUpdates.length > 0
+        ? { webSearchUpdates: result.webSearchUpdates }
         : {}),
     });
   } catch (error) {

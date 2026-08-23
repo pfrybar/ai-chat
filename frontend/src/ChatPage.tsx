@@ -14,6 +14,29 @@ import remarkGfm from 'remark-gfm';
 type ChatApi = 'chat' | 'responses';
 type ReasoningSummary = 'auto' | 'concise' | 'detailed';
 type ChatTool = 'web_search';
+type WebSearchStatus = 'in_progress' | 'searching' | 'completed' | 'failed';
+
+interface WebSearchSource {
+  title?: string;
+  url: string;
+}
+
+type WebSearchAction =
+  | {
+      type: 'search';
+      queries?: string[];
+      query?: string;
+      sources?: WebSearchSource[];
+    }
+  | { type: 'open_page'; url?: string | null }
+  | { type: 'find_in_page'; pattern: string; url: string };
+
+interface WebSearchUpdate {
+  action?: WebSearchAction;
+  itemId: string;
+  status: WebSearchStatus;
+}
+
 type ReasoningEffort =
   'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -45,7 +68,12 @@ interface ChatReasoningSummary {
   content: string;
 }
 
-type ChatItem = ChatMessage | ChatReasoningSummary;
+interface ChatWebSearch {
+  role: 'web-search';
+  updates: WebSearchUpdate[];
+}
+
+type ChatItem = ChatMessage | ChatReasoningSummary | ChatWebSearch;
 
 interface ApiErrorResponse {
   error?: string;
@@ -58,6 +86,7 @@ interface ChatResponse extends ApiErrorResponse {
   };
   rawResponse?: unknown;
   reasoningSummary?: string;
+  webSearchUpdates?: unknown;
 }
 
 interface ChatOptionsResponse extends ApiErrorResponse {
@@ -68,6 +97,7 @@ interface ChatOptionsResponse extends ApiErrorResponse {
 type ChatStreamEvent =
   | { type: 'delta'; content: string }
   | { type: 'reasoning_summary'; content: string }
+  | { type: 'web_search'; update: unknown }
   | { type: 'done'; rawResponse?: unknown }
   | { type: 'error'; error: string };
 
@@ -85,6 +115,127 @@ function formatRawResponse(rawResponse: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function isWebSearchSource(value: unknown): value is WebSearchSource {
+  return (
+    isRecord(value) &&
+    typeof value.url === 'string' &&
+    (value.title === undefined || typeof value.title === 'string')
+  );
+}
+
+function isWebSearchAction(value: unknown): value is WebSearchAction {
+  if (!isRecord(value) || typeof value.type !== 'string') {
+    return false;
+  }
+
+  if (value.type === 'search') {
+    return (
+      (value.queries === undefined ||
+        (Array.isArray(value.queries) &&
+          value.queries.every((query) => typeof query === 'string'))) &&
+      (value.query === undefined || typeof value.query === 'string') &&
+      (value.sources === undefined ||
+        (Array.isArray(value.sources) &&
+          value.sources.every(isWebSearchSource)))
+    );
+  }
+
+  if (value.type === 'open_page') {
+    return (
+      value.url === undefined ||
+      value.url === null ||
+      typeof value.url === 'string'
+    );
+  }
+
+  return (
+    value.type === 'find_in_page' &&
+    typeof value.pattern === 'string' &&
+    typeof value.url === 'string'
+  );
+}
+
+function isWebSearchUpdate(value: unknown): value is WebSearchUpdate {
+  return (
+    isRecord(value) &&
+    typeof value.itemId === 'string' &&
+    (value.status === 'in_progress' ||
+      value.status === 'searching' ||
+      value.status === 'completed' ||
+      value.status === 'failed') &&
+    (value.action === undefined || isWebSearchAction(value.action))
+  );
+}
+
+function getWebSearchUpdates(value: unknown): WebSearchUpdate[] {
+  return Array.isArray(value) ? value.filter(isWebSearchUpdate) : [];
+}
+
+function getWebSearchStatusLabel(status: WebSearchStatus) {
+  switch (status) {
+    case 'in_progress':
+      return 'Starting';
+    case 'searching':
+      return 'Searching';
+    case 'completed':
+      return 'Complete';
+    case 'failed':
+      return 'Failed';
+  }
+}
+
+function getWebSearchOverallStatus(updates: WebSearchUpdate[]) {
+  if (updates.some(({ status }) => status === 'searching')) {
+    return 'Searching…';
+  }
+
+  if (updates.some(({ status }) => status === 'in_progress')) {
+    return 'Starting…';
+  }
+
+  if (updates.some(({ status }) => status === 'failed')) {
+    return 'Search failed';
+  }
+
+  return 'Complete';
+}
+
+function getWebSearchActionDescription(action?: WebSearchAction) {
+  if (!action) {
+    return 'Working with the web…';
+  }
+
+  if (action.type === 'search') {
+    const queries = action.queries?.length
+      ? action.queries
+      : action.query
+        ? [action.query]
+        : [];
+
+    return queries.length > 0
+      ? `Searched for ${queries.map((query) => `“${query}”`).join(', ')}`
+      : 'Searched the web';
+  }
+
+  if (action.type === 'open_page') {
+    return action.url ? `Opened ${action.url}` : 'Opened a search result';
+  }
+
+  return `Looked for “${action.pattern}” in ${action.url}`;
+}
+
+function getWebSearchSourceLabel(source: WebSearchSource) {
+  if (source.title) {
+    return source.title;
+  }
+
+  try {
+    return new URL(source.url).hostname.replace(/^www\\./, '');
+  } catch {
+    return source.url;
+  }
 }
 
 interface TokenUsage {
@@ -255,6 +406,7 @@ async function consumeChatStream(
   response: Response,
   onDelta: (content: string) => void,
   onReasoningSummary: (content: string) => void,
+  onWebSearch: (update: WebSearchUpdate) => void,
   onComplete: (rawResponse: unknown | undefined) => void,
 ) {
   if (!response.body) {
@@ -302,6 +454,8 @@ async function consumeChatStream(
       typeof event.content === 'string'
     ) {
       onReasoningSummary(event.content);
+    } else if (event.type === 'web_search' && isWebSearchUpdate(event.update)) {
+      onWebSearch(event.update);
     } else if (event.type === 'error' && typeof event.error === 'string') {
       throw new Error(event.error);
     } else if (event.type === 'done') {
@@ -521,6 +675,7 @@ export function ChatPage() {
           response,
           appendAssistantDelta,
           appendReasoningSummary,
+          appendWebSearchUpdate,
           attachRawResponse,
         );
       } else {
@@ -531,8 +686,13 @@ export function ChatPage() {
           throw new Error('The API returned an empty response.');
         }
 
+        const webSearchUpdates = getWebSearchUpdates(data.webSearchUpdates);
+
         setMessages((currentMessages) => [
           ...currentMessages,
+          ...(webSearchUpdates.length > 0
+            ? [{ role: 'web-search' as const, updates: webSearchUpdates }]
+            : []),
           ...(data.reasoningSummary
             ? [
                 {
@@ -573,6 +733,50 @@ export function ChatPage() {
       }
 
       return [...currentMessages, { content: delta, role: 'assistant' }];
+    });
+  }
+
+  function appendWebSearchUpdate(update: WebSearchUpdate) {
+    setMessages((currentMessages) => {
+      let lastUserIndex = -1;
+
+      for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
+        if (currentMessages[index].role === 'user') {
+          lastUserIndex = index;
+          break;
+        }
+      }
+
+      const webSearchIndex = currentMessages.length - 1;
+      const webSearchMessage = currentMessages[webSearchIndex];
+
+      if (
+        webSearchIndex <= lastUserIndex ||
+        webSearchMessage?.role !== 'web-search'
+      ) {
+        return [...currentMessages, { role: 'web-search', updates: [update] }];
+      }
+
+      const updateIndex = webSearchMessage.updates.findIndex(
+        ({ itemId }) => itemId === update.itemId,
+      );
+      const updates = [...webSearchMessage.updates];
+
+      if (updateIndex === -1) {
+        updates.push(update);
+      } else {
+        updates[updateIndex] = {
+          ...updates[updateIndex],
+          status: update.status,
+          ...(update.action ? { action: update.action } : {}),
+        };
+      }
+
+      return [
+        ...currentMessages.slice(0, webSearchIndex),
+        { ...webSearchMessage, updates },
+        ...currentMessages.slice(webSearchIndex + 1),
+      ];
     });
   }
 
@@ -901,6 +1105,57 @@ export function ChatPage() {
                       </ReactMarkdown>
                     </div>
                   </details>
+                ) : message.role === 'web-search' ? (
+                  <section
+                    aria-label="Web search activity"
+                    className="chat-web-search"
+                    key={`${message.role}-${index}`}
+                  >
+                    <div className="chat-web-search-header">
+                      <span className="chat-web-search-title">Web search</span>
+                      <span className="chat-web-search-overall-status">
+                        {getWebSearchOverallStatus(message.updates)}
+                      </span>
+                    </div>
+                    <ul className="chat-web-search-events">
+                      {message.updates.map((update) => {
+                        const sources =
+                          update.action?.type === 'search'
+                            ? (update.action.sources ?? [])
+                            : [];
+
+                        return (
+                          <li key={update.itemId}>
+                            <div className="chat-web-search-event-header">
+                              <span
+                                className={`chat-web-search-status ${update.status}`}
+                              >
+                                {getWebSearchStatusLabel(update.status)}
+                              </span>
+                              <span>
+                                {getWebSearchActionDescription(update.action)}
+                              </span>
+                            </div>
+                            {sources.length > 0 && (
+                              <ul className="chat-web-search-sources">
+                                {sources.map((source) => (
+                                  <li key={source.url}>
+                                    <a
+                                      href={source.url}
+                                      rel="noreferrer"
+                                      target="_blank"
+                                    >
+                                      {getWebSearchSourceLabel(source)}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
                 ) : (
                   <article
                     className={`chat-message ${message.role}`}

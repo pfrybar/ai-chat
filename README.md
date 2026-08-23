@@ -40,7 +40,7 @@ The available efforts differ by API:
 
 ### Web search
 
-Enable **Web search** while using the Responses API to give the model access to current web information. The playground sends the Responses API `web_search` tool without additional configuration; advanced web-search parameters can be added later.
+Enable **Web search** while using the Responses API to give the model access to current web information. The Responses API returns a `web_search_call` output item describing the action taken (`search`, `open_page`, or `find_in_page`) and any search sources. The playground requests the action sources, displays the search action, query, status, and source links, and updates the activity panel from streaming web-search events in real time. It sends the Responses API `web_search` tool without additional configuration; advanced web-search parameters can be added later.
 
 ### Reasoning summaries
 

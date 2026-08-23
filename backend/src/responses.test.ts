@@ -29,6 +29,16 @@ describe('Responses API client', () => {
     createResponse.mockResolvedValue({
       output: [
         {
+          action: {
+            queries: ['current facts about the topic'],
+            sources: [{ type: 'url', url: 'https://example.com/source' }],
+            type: 'search',
+          },
+          id: 'ws_test',
+          status: 'completed',
+          type: 'web_search_call',
+        },
+        {
           summary: [
             {
               text: 'The model considered the relevant facts.',
@@ -54,6 +64,16 @@ describe('Responses API client', () => {
       rawResponse: {
         output: [
           {
+            action: {
+              queries: ['current facts about the topic'],
+              sources: [{ type: 'url', url: 'https://example.com/source' }],
+              type: 'search',
+            },
+            id: 'ws_test',
+            status: 'completed',
+            type: 'web_search_call',
+          },
+          {
             summary: [
               {
                 text: 'The model considered the relevant facts.',
@@ -66,8 +86,20 @@ describe('Responses API client', () => {
         output_text: 'Hello from the Responses API.',
       },
       reasoningSummary: 'The model considered the relevant facts.',
+      webSearchUpdates: [
+        {
+          action: {
+            queries: ['current facts about the topic'],
+            sources: [{ url: 'https://example.com/source' }],
+            type: 'search',
+          },
+          itemId: 'ws_test',
+          status: 'completed',
+        },
+      ],
     });
     expect(createResponse).toHaveBeenCalledWith({
+      include: ['web_search_call.action.sources'],
       input: [{ content: 'Hello', role: 'user' }],
       model: 'test-model',
       reasoning: { effort: 'high', summary: 'detailed' },
@@ -81,6 +113,37 @@ describe('Responses API client', () => {
     const signal = new AbortController().signal;
     createResponse.mockResolvedValue(
       (async function* () {
+        yield {
+          item: {
+            id: 'ws_test',
+            status: 'in_progress',
+            type: 'web_search_call',
+          },
+          output_index: 0,
+          sequence_number: 0,
+          type: 'response.output_item.added',
+        };
+        yield {
+          item_id: 'ws_test',
+          output_index: 0,
+          sequence_number: 1,
+          type: 'response.web_search_call.searching',
+        };
+        yield {
+          item: {
+            action: {
+              queries: ['current facts about the topic'],
+              sources: [{ type: 'url', url: 'https://example.com/source' }],
+              type: 'search',
+            },
+            id: 'ws_test',
+            status: 'completed',
+            type: 'web_search_call',
+          },
+          output_index: 0,
+          sequence_number: 2,
+          type: 'response.output_item.done',
+        };
         yield {
           delta: 'The model considered ',
           summary_index: 0,
@@ -111,12 +174,69 @@ describe('Responses API client', () => {
     }
 
     expect(chunks).toEqual([
+      {
+        type: 'web_search',
+        update: {
+          itemId: 'ws_test',
+          status: 'in_progress',
+        },
+      },
+      {
+        type: 'web_search',
+        update: {
+          itemId: 'ws_test',
+          status: 'searching',
+        },
+      },
+      {
+        type: 'web_search',
+        update: {
+          action: {
+            queries: ['current facts about the topic'],
+            sources: [{ url: 'https://example.com/source' }],
+            type: 'search',
+          },
+          itemId: 'ws_test',
+          status: 'completed',
+        },
+      },
       { content: 'The model considered ', type: 'reasoning_summary' },
       { content: 'the relevant facts.', type: 'reasoning_summary' },
       { content: 'Hello ', type: 'delta' },
       { content: 'as it arrives.', type: 'delta' },
     ]);
     expect(result.getRawResponse?.()).toEqual([
+      {
+        item: {
+          id: 'ws_test',
+          status: 'in_progress',
+          type: 'web_search_call',
+        },
+        output_index: 0,
+        sequence_number: 0,
+        type: 'response.output_item.added',
+      },
+      {
+        item_id: 'ws_test',
+        output_index: 0,
+        sequence_number: 1,
+        type: 'response.web_search_call.searching',
+      },
+      {
+        item: {
+          action: {
+            queries: ['current facts about the topic'],
+            sources: [{ type: 'url', url: 'https://example.com/source' }],
+            type: 'search',
+          },
+          id: 'ws_test',
+          status: 'completed',
+          type: 'web_search_call',
+        },
+        output_index: 0,
+        sequence_number: 2,
+        type: 'response.output_item.done',
+      },
       {
         delta: 'The model considered ',
         summary_index: 0,
@@ -135,6 +255,7 @@ describe('Responses API client', () => {
         input: [{ content: 'Hello', role: 'user' }],
         model: 'test-model',
         reasoning: { effort: 'low', summary: 'concise' },
+        include: ['web_search_call.action.sources'],
         tools: [{ type: 'web_search' }],
         store: false,
         stream: true,
