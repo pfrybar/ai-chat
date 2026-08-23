@@ -320,6 +320,13 @@ textarea:focus-visible {
   gap: 0.5rem;
 }
 
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-left: auto;
+}
+
 .message-role {
   display: block;
   margin-bottom: 0.35rem;
@@ -334,11 +341,12 @@ textarea:focus-visible {
   color: #dbeafe;
 }
 
-.raw-response-button {
+.raw-response-button,
+.token-usage-button {
   display: grid;
   width: 1.65rem;
   height: 1.65rem;
-  margin: 0 0 0 auto;
+  margin: 0;
   padding: 0;
   place-items: center;
   border: 1px solid #475569;
@@ -348,12 +356,14 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
-.raw-response-button:hover {
+.raw-response-button:hover,
+.token-usage-button:hover {
   border-color: #60a5fa;
   background: #26364d;
 }
 
-.raw-response-button svg {
+.raw-response-button svg,
+.token-usage-button svg {
   width: 1rem;
   height: 1rem;
   fill: none;
@@ -417,6 +427,52 @@ textarea:focus-visible {
 .raw-response-modal button:hover {
   border-color: #60a5fa;
   color: #f8fafc;
+}
+
+.token-usage-table-wrapper {
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.token-usage-table-wrapper table {
+  width: 100%;
+  min-width: 38rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid #334155;
+  border-radius: 0.65rem;
+  background: #0f172a;
+}
+
+.token-usage-table-wrapper th,
+.token-usage-table-wrapper td {
+  padding: 0.85rem 0.9rem;
+  border-right: 1px solid #334155;
+  text-align: left;
+}
+
+.token-usage-table-wrapper th:last-child,
+.token-usage-table-wrapper td:last-child {
+  border-right: 0;
+}
+
+.token-usage-table-wrapper th {
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+
+.token-usage-table-wrapper td {
+  border-top: 1px solid #334155;
+  color: #f8fafc;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .raw-response-modal pre {
@@ -653,6 +709,22 @@ textarea:focus-visible {
   .chat-message.assistant,
   .chat-reasoning-summary {
     width: 90%;
+  }
+
+  .message-actions {
+    gap: 0.3rem;
+  }
+
+  .token-usage-table-wrapper {
+    padding: 0.75rem;
+  }
+
+  .raw-response-modal-backdrop {
+    padding: 0.75rem;
+  }
+
+  .raw-response-modal {
+    max-height: calc(100dvh - 1.5rem);
   }
 
   .composer-dock {

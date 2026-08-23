@@ -48,7 +48,7 @@ The Responses API can optionally return a reasoning summary in `auto`, `concise`
 
 ### Raw provider responses
 
-Each completed assistant bubble includes a code icon that opens the raw provider payload. Complete requests retain the full OpenAI response object; streamed requests retain the provider stream events. Raw payloads are held only in the current browser conversation and are not sent back as chat history on later turns.
+Each completed assistant bubble includes a code icon that opens the raw provider payload. When a provider response includes usage data, a token-usage icon opens a normalized table of **Input tokens**, **Input cached**, **Input cache write**, **Output tokens**, and **Output reasoning**. Complete requests retain the full OpenAI response object; streamed requests retain the provider stream events. Raw payloads are held only in the current browser conversation and are not sent back as chat history on later turns.
 
 ## Commands
 

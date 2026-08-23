@@ -70,6 +70,7 @@ export async function streamChat(
       model,
       ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       stream: true,
+      stream_options: { include_usage: true },
     },
     { signal },
   );

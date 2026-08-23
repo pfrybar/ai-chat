@@ -83,6 +83,81 @@ function formatRawResponse(rawResponse: unknown) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+interface TokenUsage {
+  inputTokens: number;
+  inputCachedTokens: number;
+  inputCacheWriteTokens: number;
+  outputTokens: number;
+  outputReasoningTokens: number;
+}
+
+function getUsageRecord(rawResponse: unknown): Record<string, unknown> | null {
+  if (Array.isArray(rawResponse)) {
+    for (let index = rawResponse.length - 1; index >= 0; index -= 1) {
+      const event = rawResponse[index];
+
+      if (
+        isRecord(event) &&
+        event.type === 'response.completed' &&
+        isRecord(event.response) &&
+        isRecord(event.response.usage)
+      ) {
+        return event.response.usage;
+      }
+
+      if (isRecord(event) && isRecord(event.usage)) {
+        return event.usage;
+      }
+    }
+
+    return null;
+  }
+
+  if (isRecord(rawResponse) && isRecord(rawResponse.usage)) {
+    return rawResponse.usage;
+  }
+
+  return null;
+}
+
+function getTokenUsage(rawResponse: unknown): TokenUsage | null {
+  const usage = getUsageRecord(rawResponse);
+  const inputTokens = usage?.input_tokens ?? usage?.prompt_tokens;
+  const outputTokens = usage?.output_tokens ?? usage?.completion_tokens;
+  const inputDetails = isRecord(usage?.input_tokens_details)
+    ? usage.input_tokens_details
+    : isRecord(usage?.prompt_tokens_details)
+      ? usage.prompt_tokens_details
+      : null;
+  const outputDetails = isRecord(usage?.output_tokens_details)
+    ? usage.output_tokens_details
+    : isRecord(usage?.completion_tokens_details)
+      ? usage.completion_tokens_details
+      : null;
+  const inputCachedTokens = inputDetails?.cached_tokens ?? usage?.cached_tokens;
+  const inputCacheWriteTokens =
+    inputDetails?.cache_write_tokens ?? usage?.cache_write_tokens;
+  const outputReasoningTokens =
+    outputDetails?.reasoning_tokens ?? usage?.reasoning_tokens;
+
+  return typeof inputTokens === 'number' && typeof outputTokens === 'number'
+    ? {
+        inputTokens,
+        inputCachedTokens:
+          typeof inputCachedTokens === 'number' ? inputCachedTokens : 0,
+        inputCacheWriteTokens:
+          typeof inputCacheWriteTokens === 'number' ? inputCacheWriteTokens : 0,
+        outputTokens,
+        outputReasoningTokens:
+          typeof outputReasoningTokens === 'number' ? outputReasoningTokens : 0,
+      }
+    : null;
+}
+
 function isChatMessage(item: ChatItem): item is ChatMessage {
   return item.role === 'user' || item.role === 'assistant';
 }
@@ -283,6 +358,9 @@ export function ChatPage() {
   const [rawResponseModal, setRawResponseModal] = useState<{
     content: unknown;
   } | null>(null);
+  const [tokenUsageModal, setTokenUsageModal] = useState<{
+    usage: TokenUsage;
+  } | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [isOptionsLoading, setIsOptionsLoading] = useState(true);
@@ -355,20 +433,21 @@ export function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!rawResponseModal) {
+    if (!rawResponseModal && !tokenUsageModal) {
       return;
     }
 
     function closeOnEscape(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape') {
         setRawResponseModal(null);
+        setTokenUsageModal(null);
       }
     }
 
     window.addEventListener('keydown', closeOnEscape);
 
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [rawResponseModal]);
+  }, [rawResponseModal, tokenUsageModal]);
 
   useLayoutEffect(() => {
     const messageList = messageListRef.current;
@@ -833,25 +912,52 @@ export function ChatPage() {
                       </span>
                       {message.role === 'assistant' &&
                         message.rawResponse !== undefined && (
-                          <button
-                            aria-label="View raw response"
-                            className="raw-response-button"
-                            onClick={() =>
-                              setRawResponseModal({
-                                content: message.rawResponse,
-                              })
-                            }
-                            title="View raw response"
-                            type="button"
-                          >
-                            <svg
-                              aria-hidden="true"
-                              viewBox="0 0 24 24"
-                              xmlns="http://www.w3.org/2000/svg"
+                          <div className="message-actions">
+                            {getTokenUsage(message.rawResponse) && (
+                              <button
+                                aria-label="View token usage"
+                                className="token-usage-button"
+                                onClick={() => {
+                                  const usage = getTokenUsage(
+                                    message.rawResponse,
+                                  );
+
+                                  if (usage) {
+                                    setTokenUsageModal({ usage });
+                                  }
+                                }}
+                                title="View token usage"
+                                type="button"
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  viewBox="0 0 24 24"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path d="M4 19V9m8 10V5m8 14v-7" />
+                                </svg>
+                              </button>
+                            )}
+                            <button
+                              aria-label="View raw response"
+                              className="raw-response-button"
+                              onClick={() =>
+                                setRawResponseModal({
+                                  content: message.rawResponse,
+                                })
+                              }
+                              title="View raw response"
+                              type="button"
                             >
-                              <path d="M8 9 5 12l3 3m8-6 3 3-3 3M14 5l-4 14" />
-                            </svg>
-                          </button>
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path d="M8 9 5 12l3 3m8-6 3 3-3 3M14 5l-4 14" />
+                              </svg>
+                            </button>
+                          </div>
                         )}
                     </div>
                     {message.role === 'assistant' ? (
@@ -914,6 +1020,64 @@ export function ChatPage() {
           </section>
         </div>
       </section>
+
+      {tokenUsageModal && (
+        <div
+          className="raw-response-modal-backdrop"
+          onMouseDown={() => setTokenUsageModal(null)}
+        >
+          <section
+            aria-labelledby="token-usage-title"
+            aria-modal="true"
+            className="raw-response-modal token-usage-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <header>
+              <h2 id="token-usage-title">Token usage</h2>
+              <button
+                aria-label="Close token usage"
+                onClick={() => setTokenUsageModal(null)}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <div className="token-usage-table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Input tokens</th>
+                    <th scope="col">Input cached</th>
+                    <th scope="col">Input cache write</th>
+                    <th scope="col">Output tokens</th>
+                    <th scope="col">Output reasoning</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>
+                      {tokenUsageModal.usage.inputTokens.toLocaleString()}
+                    </td>
+                    <td>
+                      {tokenUsageModal.usage.inputCachedTokens.toLocaleString()}
+                    </td>
+                    <td>
+                      {tokenUsageModal.usage.inputCacheWriteTokens.toLocaleString()}
+                    </td>
+                    <td>
+                      {tokenUsageModal.usage.outputTokens.toLocaleString()}
+                    </td>
+                    <td>
+                      {tokenUsageModal.usage.outputReasoningTokens.toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
 
       {rawResponseModal && (
         <div

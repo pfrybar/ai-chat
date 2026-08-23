@@ -324,7 +324,23 @@ describe('App', () => {
         reasoningSummaryStreamResponse(
           'The model compared the options.',
           'A useful answer.',
-          [{ type: 'response.completed' }],
+          [
+            {
+              response: {
+                usage: {
+                  input_tokens: 12,
+                  input_tokens_details: {
+                    cache_write_tokens: 2,
+                    cached_tokens: 4,
+                  },
+                  output_tokens: 8,
+                  output_tokens_details: { reasoning_tokens: 3 },
+                  total_tokens: 20,
+                },
+              },
+              type: 'response.completed',
+            },
+          ],
         ),
       );
 
@@ -350,6 +366,13 @@ describe('App', () => {
     expect(
       screen.getByText('Reasoning summary', { selector: 'summary' }),
     ).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole('button', {
+          name: /View (token usage|raw response)/,
+        })
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual(['View token usage', 'View raw response']);
     const rawResponseButton = screen.getByLabelText('View raw response');
     fireEvent.click(rawResponseButton);
     expect(
@@ -359,6 +382,24 @@ describe('App', () => {
     fireEvent.click(screen.getByLabelText('Close raw response'));
     expect(
       screen.queryByRole('dialog', { name: 'Raw response' }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('View token usage'));
+    expect(
+      screen.getByRole('dialog', { name: 'Token usage' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Input tokens')).toBeInTheDocument();
+    expect(screen.getByText('Input cached')).toBeInTheDocument();
+    expect(screen.getByText('Input cache write')).toBeInTheDocument();
+    expect(screen.getByText('Output tokens')).toBeInTheDocument();
+    expect(screen.getByText('Output reasoning')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Close token usage'));
+    expect(
+      screen.queryByRole('dialog', { name: 'Token usage' }),
     ).not.toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/chat',
@@ -436,7 +477,19 @@ describe('App', () => {
         chatResponse(
           'A complete response.',
           'The model weighed the tradeoffs.',
-          { id: 'resp_complete', object: 'response' },
+          {
+            id: 'resp_complete',
+            object: 'response',
+            usage: {
+              input_tokens: 16,
+              input_tokens_details: {
+                cache_write_tokens: 1,
+                cached_tokens: 5,
+              },
+              output_tokens: 7,
+              output_tokens_details: { reasoning_tokens: 2 },
+            },
+          },
         ),
       );
 
@@ -462,6 +515,12 @@ describe('App', () => {
     expect(
       screen.getByText('The model weighed the tradeoffs.'),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('View token usage'));
+    expect(screen.getByText('Input tokens')).toBeInTheDocument();
+    expect(screen.getByText('Output tokens')).toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Close token usage'));
     fireEvent.click(screen.getByLabelText('View raw response'));
     expect(screen.getByText(/resp_complete/)).toBeInTheDocument();
     expect(fetch).toHaveBeenLastCalledWith(
@@ -476,6 +535,50 @@ describe('App', () => {
         }),
       }),
     );
+  });
+
+  it('normalizes Chat Completions usage as input and output tokens', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(
+        chatResponse('A chat completion.', undefined, {
+          choices: [{ message: { content: 'A chat completion.' } }],
+          usage: {
+            completion_tokens: 6,
+            completion_tokens_details: { reasoning_tokens: 2 },
+            prompt_tokens: 14,
+            prompt_tokens_details: {
+              cache_write_tokens: 1,
+              cached_tokens: 3,
+            },
+            total_tokens: 20,
+          },
+        }),
+      );
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('Response delivery'), {
+      target: { value: 'complete' },
+    });
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'Hello' } });
+    fireEvent.submit(input.closest('form')!);
+    expect(await screen.findByText('A chat completion.')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('View token usage'));
+    expect(screen.getByText('Input tokens')).toBeInTheDocument();
+    expect(screen.getByText('Input cached')).toBeInTheDocument();
+    expect(screen.getByText('Input cache write')).toBeInTheDocument();
+    expect(screen.getByText('Output tokens')).toBeInTheDocument();
+    expect(screen.getByText('Output reasoning')).toBeInTheDocument();
+    expect(screen.getByText('14')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('6')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('excludes raw responses from later conversation history', async () => {

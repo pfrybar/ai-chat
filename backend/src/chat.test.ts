@@ -102,6 +102,7 @@ describe('Chat Completions client', () => {
         model: 'stream-model',
         reasoning_effort: 'low',
         stream: true,
+        stream_options: { include_usage: true },
       },
       { signal },
     );
