@@ -492,6 +492,24 @@ textarea:focus-visible {
   line-height: 1.6;
 }
 
+.chat-message a {
+  color: #93c5fd;
+  text-decoration-thickness: 0.1em;
+  text-underline-offset: 0.15em;
+}
+
+.chat-message a:hover {
+  color: #bfdbfe;
+}
+
+.chat-message.user a {
+  color: #dbeafe;
+}
+
+.chat-message.user a:hover {
+  color: #f8fafc;
+}
+
 .chat-message h1,
 .chat-message h2,
 .chat-message h3 {
