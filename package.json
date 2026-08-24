@@ -14,9 +14,9 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,green \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint .",
+    "format": "prettier --write --ignore-unknown package.json .gitignore .prettierignore .prettierrc.json .env.example README.md AGENTS.md eslint.config.mjs frontend backend .github",
+    "format:check": "prettier --check --ignore-unknown package.json .gitignore .prettierignore .prettierrc.json .env.example README.md AGENTS.md eslint.config.mjs frontend backend .github",
+    "lint": "eslint backend frontend eslint.config.mjs",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

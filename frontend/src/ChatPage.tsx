@@ -92,7 +92,6 @@ type RenderChatItem = ChatMessage | ChatTraceGroup;
 
 interface ApiErrorResponse {
   error?: string;
-  details?: string;
 }
 
 interface ChatResponse extends ApiErrorResponse {
@@ -115,10 +114,6 @@ type ChatStreamEvent =
   | { type: 'web_search'; update: unknown }
   | { type: 'done'; rawResponse?: unknown }
   | { type: 'error'; error: string };
-
-function formatApiError(error: string, details?: string) {
-  return [error, details].filter(Boolean).join('\n\n');
-}
 
 function formatRawResponse(rawResponse: unknown) {
   try {
@@ -740,10 +735,7 @@ export function ChatPage() {
 
         if (!response.ok) {
           throw new Error(
-            formatApiError(
-              data.error ?? `The API returned status ${response.status}.`,
-              data.details,
-            ),
+            data.error ?? `The API returned status ${response.status}.`,
           );
         }
 
@@ -890,10 +882,7 @@ export function ChatPage() {
         const data = await readApiResponse<ChatResponse>(response);
 
         throw new Error(
-          formatApiError(
-            data.error ?? `The API returned status ${response.status}.`,
-            data.details,
-          ),
+          data.error ?? `The API returned status ${response.status}.`,
         );
       }
 
