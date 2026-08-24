@@ -119,7 +119,47 @@ describe('API application', () => {
       ['web_search'],
       'minimal',
       'detailed',
-      { returnTokenBudget: 'unlimited', searchContextSize: 'high' },
+      {
+        imageCaptions: null,
+        imageMaxResults: null,
+        returnTokenBudget: 'unlimited',
+        searchContextSize: 'high',
+        searchContentTypes: null,
+      },
+    );
+  });
+
+  it('passes image search options to the Responses service', async () => {
+    const completeResponse = vi.fn().mockResolvedValue({
+      content: 'Responses response with images.',
+    });
+    const response = await request(createApp({ completeResponse, models }))
+      .post('/api/chat')
+      .send({
+        api: 'responses',
+        imageCaptions: false,
+        imageMaxResults: 5,
+        messages,
+        model: 'alternate-model',
+        searchContentTypes: ['image', 'text'],
+        stream: false,
+        tools: ['web_search'],
+      });
+
+    expect(response.status).toBe(200);
+    expect(completeResponse).toHaveBeenCalledWith(
+      messages,
+      'alternate-model',
+      ['web_search'],
+      null,
+      null,
+      {
+        imageCaptions: false,
+        imageMaxResults: 5,
+        returnTokenBudget: null,
+        searchContextSize: null,
+        searchContentTypes: ['image', 'text'],
+      },
     );
   });
 
@@ -174,7 +214,13 @@ describe('API application', () => {
       'low',
       'concise',
       expect.any(AbortSignal),
-      { returnTokenBudget: null, searchContextSize: null },
+      {
+        imageCaptions: null,
+        imageMaxResults: null,
+        returnTokenBudget: null,
+        searchContextSize: null,
+        searchContentTypes: null,
+      },
     );
   });
 

@@ -58,7 +58,13 @@ describe('Responses API client', () => {
         ['web_search'],
         'high',
         'detailed',
-        { returnTokenBudget: 'unlimited', searchContextSize: 'low' },
+        {
+          imageCaptions: true,
+          imageMaxResults: 3,
+          returnTokenBudget: 'unlimited',
+          searchContextSize: 'low',
+          searchContentTypes: ['image', 'text'],
+        },
       ),
     ).resolves.toEqual({
       content: 'Hello from the Responses API.',
@@ -100,13 +106,15 @@ describe('Responses API client', () => {
       ],
     });
     expect(createResponse).toHaveBeenCalledWith({
-      include: ['web_search_call.action.sources'],
+      include: ['web_search_call.action.sources', 'web_search_call.results'],
       input: [{ content: 'Hello', role: 'user' }],
       model: 'test-model',
       reasoning: { effort: 'high', summary: 'detailed' },
       tools: [
         {
+          image_settings: { caption: true, max_results: 3 },
           return_token_budget: 'unlimited',
+          search_content_types: ['image', 'text'],
           search_context_size: 'low',
           type: 'web_search',
         },
@@ -173,7 +181,13 @@ describe('Responses API client', () => {
       'low',
       'concise',
       signal,
-      { returnTokenBudget: 'unlimited', searchContextSize: 'high' },
+      {
+        imageCaptions: true,
+        imageMaxResults: 3,
+        returnTokenBudget: 'unlimited',
+        searchContextSize: 'high',
+        searchContentTypes: ['image'],
+      },
     );
     const chunks = [];
 
@@ -263,10 +277,12 @@ describe('Responses API client', () => {
         input: [{ content: 'Hello', role: 'user' }],
         model: 'test-model',
         reasoning: { effort: 'low', summary: 'concise' },
-        include: ['web_search_call.action.sources'],
+        include: ['web_search_call.action.sources', 'web_search_call.results'],
         tools: [
           {
+            image_settings: { caption: true, max_results: 3 },
             return_token_budget: 'unlimited',
+            search_content_types: ['image'],
             search_context_size: 'high',
             type: 'web_search',
           },

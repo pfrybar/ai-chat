@@ -9,6 +9,7 @@ import {
   type ChatRole,
   type ChatStreamResult,
   type ReasoningEffort,
+  type WebSearchContentType,
   type WebSearchContextSize,
   type WebSearchOptions,
   type WebSearchReturnTokenBudget,
@@ -186,6 +187,46 @@ function parseReasoningSummary(
   return value as ReasoningSummary;
 }
 
+const validWebSearchContentTypes = new Set<WebSearchContentType>([
+  'text',
+  'image',
+]);
+
+function parseWebSearchContentTypes(
+  value: unknown,
+): WebSearchContentType[] | null | undefined {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > 2 ||
+    value.some(
+      (contentType) =>
+        typeof contentType !== 'string' ||
+        !validWebSearchContentTypes.has(contentType as WebSearchContentType),
+    )
+  ) {
+    return undefined;
+  }
+
+  const contentTypes = value as WebSearchContentType[];
+
+  if (
+    new Set(contentTypes).size !== contentTypes.length ||
+    (!contentTypes.includes('image') && !contentTypes.includes('text'))
+  ) {
+    return undefined;
+  }
+
+  return [
+    ...(contentTypes.includes('image') ? (['image'] as const) : []),
+    ...(contentTypes.includes('text') ? (['text'] as const) : []),
+  ];
+}
+
 const validWebSearchContextSizes = new Set<WebSearchContextSize>([
   'low',
   'medium',
@@ -217,6 +258,28 @@ function parseWebSearchReturnTokenBudget(
   }
 
   return value === 'unlimited' ? 'unlimited' : undefined;
+}
+
+function parseWebSearchImageMaxResults(
+  value: unknown,
+): number | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function parseWebSearchImageCaptions(
+  value: unknown,
+): boolean | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function getErrorMessage(error: unknown) {
@@ -383,6 +446,15 @@ export function createApp(options: AppOptions = {}) {
     const returnTokenBudget = isRecord(request.body)
       ? parseWebSearchReturnTokenBudget(request.body.returnTokenBudget)
       : undefined;
+    const searchContentTypes = isRecord(request.body)
+      ? parseWebSearchContentTypes(request.body.searchContentTypes)
+      : undefined;
+    const imageMaxResults = isRecord(request.body)
+      ? parseWebSearchImageMaxResults(request.body.imageMaxResults)
+      : undefined;
+    const imageCaptions = isRecord(request.body)
+      ? parseWebSearchImageCaptions(request.body.imageCaptions)
+      : undefined;
     const stream = isRecord(request.body) ? request.body.stream : null;
 
     if (
@@ -396,15 +468,27 @@ export function createApp(options: AppOptions = {}) {
       reasoningSummary === undefined ||
       searchContextSize === undefined ||
       returnTokenBudget === undefined ||
+      searchContentTypes === undefined ||
+      imageMaxResults === undefined ||
+      imageCaptions === undefined ||
       (api === 'chat' &&
         (tools.length > 0 ||
           reasoningSummary !== null ||
           (reasoningEffort !== null &&
             !validChatReasoningEfforts.has(reasoningEffort)) ||
           searchContextSize !== null ||
-          returnTokenBudget !== null)) ||
+          returnTokenBudget !== null ||
+          searchContentTypes !== null ||
+          imageMaxResults !== null ||
+          imageCaptions !== null)) ||
       (tools.length === 0 &&
-        (searchContextSize !== null || returnTokenBudget !== null)) ||
+        (searchContextSize !== null ||
+          returnTokenBudget !== null ||
+          searchContentTypes !== null ||
+          imageMaxResults !== null ||
+          imageCaptions !== null)) ||
+      (searchContentTypes?.includes('image') !== true &&
+        (imageMaxResults !== null || imageCaptions !== null)) ||
       typeof stream !== 'boolean'
     ) {
       response.status(400).json({ error: 'Invalid chat request.' });
@@ -413,8 +497,11 @@ export function createApp(options: AppOptions = {}) {
 
     const chatApi = api as ChatApi;
     const webSearchOptions: WebSearchOptions = {
+      imageCaptions,
+      imageMaxResults,
       returnTokenBudget,
       searchContextSize,
+      searchContentTypes,
     };
     const logLabel =
       chatApi === 'chat' ? 'Chat completion' : 'Responses API request';

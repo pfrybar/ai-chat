@@ -1,6 +1,7 @@
 import type {
   Response as OpenAIResponse,
   ResponseFunctionWebSearch,
+  ResponseIncludable,
   ResponseInput,
   ResponseReasoningItem,
   ResponseStreamEvent,
@@ -24,8 +25,11 @@ export type ReasoningSummary = 'auto' | 'concise' | 'detailed';
 export type ChatTool = 'web_search';
 
 const defaultWebSearchOptions: WebSearchOptions = {
+  imageCaptions: null,
+  imageMaxResults: null,
   returnTokenBudget: null,
   searchContextSize: null,
+  searchContentTypes: null,
 };
 
 function toResponseInput(messages: ChatMessage[]): ResponseInput {
@@ -40,19 +44,47 @@ function toResponseTools(
     return undefined;
   }
 
+  const hasImageSearch =
+    webSearchOptions.searchContentTypes?.includes('image') ?? false;
+  const imageSettings = hasImageSearch
+    ? {
+        ...(webSearchOptions.imageMaxResults !== null
+          ? { max_results: webSearchOptions.imageMaxResults }
+          : {}),
+        ...(webSearchOptions.imageCaptions !== null
+          ? { caption: webSearchOptions.imageCaptions }
+          : {}),
+      }
+    : undefined;
   const webSearchTool = {
     type: 'web_search' as const,
+    ...(webSearchOptions.searchContentTypes
+      ? { search_content_types: webSearchOptions.searchContentTypes }
+      : {}),
     ...(webSearchOptions.searchContextSize
       ? { search_context_size: webSearchOptions.searchContextSize }
       : {}),
     ...(webSearchOptions.returnTokenBudget
       ? { return_token_budget: webSearchOptions.returnTokenBudget }
       : {}),
+    ...(imageSettings && Object.keys(imageSettings).length > 0
+      ? { image_settings: imageSettings }
+      : {}),
   };
 
-  // The installed SDK does not yet declare return_token_budget, but the current
-  // Responses API accepts it on the web_search tool.
+  // The installed SDK does not yet declare these newer web-search fields, but
+  // the current Responses API accepts them on the web_search tool.
   return [webSearchTool as unknown as ResponseTool];
+}
+
+function getResponseInclude(hasImageSearch: boolean): ResponseIncludable[] {
+  const include: ResponseIncludable[] = ['web_search_call.action.sources'];
+
+  if (hasImageSearch) {
+    include.push('web_search_call.results');
+  }
+
+  return include;
 }
 
 function toReasoning(
@@ -199,8 +231,10 @@ export async function completeResponse(
   const client = createOpenAIClient();
   const responseTools = toResponseTools(tools, webSearchOptions);
   const reasoning = toReasoning(reasoningEffort, reasoningSummary);
+  const hasImageSearch =
+    webSearchOptions.searchContentTypes?.includes('image') ?? false;
   const response = await client.responses.create({
-    ...(responseTools ? { include: ['web_search_call.action.sources'] } : {}),
+    ...(responseTools ? { include: getResponseInclude(hasImageSearch) } : {}),
     input: toResponseInput(messages),
     model,
     ...(responseTools ? { tools: responseTools } : {}),
@@ -236,9 +270,11 @@ export async function streamResponse(
   const client = createOpenAIClient();
   const responseTools = toResponseTools(tools, webSearchOptions);
   const reasoning = toReasoning(reasoningEffort, reasoningSummary);
+  const hasImageSearch =
+    webSearchOptions.searchContentTypes?.includes('image') ?? false;
   const responseStream = await client.responses.create(
     {
-      ...(responseTools ? { include: ['web_search_call.action.sources'] } : {}),
+      ...(responseTools ? { include: getResponseInclude(hasImageSearch) } : {}),
       input: toResponseInput(messages),
       model,
       ...(responseTools ? { tools: responseTools } : {}),

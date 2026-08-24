@@ -681,6 +681,15 @@ textarea:focus-visible {
   line-height: 1.6;
 }
 
+.chat-message img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: min(28rem, 60vh);
+  border-radius: 0.65rem;
+  object-fit: contain;
+}
+
 .chat-message a {
   color: #93c5fd;
   text-decoration-thickness: 0.1em;

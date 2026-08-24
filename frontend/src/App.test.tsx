@@ -230,7 +230,7 @@ describe('App', () => {
     window.history.replaceState(
       null,
       '',
-      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&web_search=true&search_context_size=high&return_token_budget=unlimited&delivery=complete',
+      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&web_search=true&search_content=image_text&image_max_results=5&image_captions=false&search_context_size=high&return_token_budget=unlimited&delivery=complete',
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
@@ -241,6 +241,9 @@ describe('App', () => {
     );
     expect(screen.getByLabelText('API')).toHaveValue('responses');
     expect(screen.getByLabelText('Web search')).toBeChecked();
+    expect(screen.getByLabelText('Search content')).toHaveValue('image_text');
+    expect(screen.getByLabelText('Max image results')).toHaveValue('5');
+    expect(screen.getByLabelText('Include image captions')).not.toBeChecked();
     expect(screen.getByLabelText('Search context size')).toHaveValue('high');
     expect(screen.getByLabelText('Return token budget')).toHaveValue(
       'unlimited',
@@ -266,6 +269,13 @@ describe('App', () => {
       target: { value: 'alternate-model' },
     });
     fireEvent.click(screen.getByLabelText('Web search'));
+    fireEvent.change(screen.getByLabelText('Search content'), {
+      target: { value: 'image' },
+    });
+    fireEvent.change(screen.getByLabelText('Max image results'), {
+      target: { value: '5' },
+    });
+    fireEvent.click(screen.getByLabelText('Include image captions'));
     fireEvent.change(screen.getByLabelText('Search context size'), {
       target: { value: 'low' },
     });
@@ -286,6 +296,9 @@ describe('App', () => {
     expect(query.get('api')).toBe('responses');
     expect(query.get('model')).toBe('alternate-model');
     expect(query.get('web_search')).toBe('true');
+    expect(query.get('search_content')).toBe('image');
+    expect(query.get('image_max_results')).toBe('5');
+    expect(query.get('image_captions')).toBe('false');
     expect(query.get('search_context_size')).toBe('low');
     expect(query.get('return_token_budget')).toBe('unlimited');
     expect(query.get('reasoning')).toBe('xhigh');
@@ -399,6 +412,13 @@ describe('App', () => {
       target: { value: 'high' },
     });
     fireEvent.click(screen.getByLabelText('Web search'));
+    fireEvent.change(screen.getByLabelText('Search content'), {
+      target: { value: 'image_text' },
+    });
+    fireEvent.change(screen.getByLabelText('Max image results'), {
+      target: { value: '5' },
+    });
+    fireEvent.click(screen.getByLabelText('Include image captions'));
     fireEvent.change(screen.getByLabelText('Search context size'), {
       target: { value: 'high' },
     });
@@ -422,6 +442,9 @@ describe('App', () => {
           model: 'default-model',
           reasoningEffort: 'high',
           tools: ['web_search'],
+          searchContentTypes: ['image', 'text'],
+          imageCaptions: false,
+          imageMaxResults: 5,
           searchContextSize: 'high',
           returnTokenBudget: 'unlimited',
           stream: true,

@@ -12,11 +12,15 @@ export interface ChatMessage {
 }
 
 export type WebSearchContextSize = 'low' | 'medium' | 'high';
+export type WebSearchContentType = 'text' | 'image';
 export type WebSearchReturnTokenBudget = 'unlimited';
 
 export interface WebSearchOptions {
+  imageCaptions: boolean | null;
+  imageMaxResults: number | null;
   returnTokenBudget: WebSearchReturnTokenBudget | null;
   searchContextSize: WebSearchContextSize | null;
+  searchContentTypes: WebSearchContentType[] | null;
 }
 
 export interface WebSearchSource {

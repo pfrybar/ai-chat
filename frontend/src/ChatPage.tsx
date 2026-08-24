@@ -14,8 +14,12 @@ import remarkGfm from 'remark-gfm';
 type ChatApi = 'chat' | 'responses';
 type ReasoningSummary = 'auto' | 'concise' | 'detailed';
 type ChatTool = 'web_search';
+type WebSearchContentOption = 'text' | 'image' | 'image_text';
 type WebSearchContextSize = 'low' | 'medium' | 'high';
+type WebSearchImageMaxResults = 1 | 3 | 5 | 10;
 type WebSearchReturnTokenBudget = 'unlimited';
+
+const webSearchImageMaxResultOptions = [1, 3, 5, 10] as const;
 type WebSearchStatus = 'in_progress' | 'searching' | 'completed' | 'failed';
 
 interface WebSearchSource {
@@ -484,6 +488,14 @@ function getInitialWebSearchOption() {
   );
 }
 
+function getInitialWebSearchContent(): WebSearchContentOption {
+  const value = new URLSearchParams(window.location.search).get(
+    'search_content',
+  );
+
+  return value === 'image' || value === 'image_text' ? value : 'text';
+}
+
 function getInitialWebSearchContextSize(): WebSearchContextSize | null {
   const value = new URLSearchParams(window.location.search).get(
     'search_context_size',
@@ -492,6 +504,25 @@ function getInitialWebSearchContextSize(): WebSearchContextSize | null {
   return value === 'low' || value === 'medium' || value === 'high'
     ? value
     : null;
+}
+
+function getInitialWebSearchImageMaxResults(): WebSearchImageMaxResults {
+  const value = Number(
+    new URLSearchParams(window.location.search).get('image_max_results'),
+  );
+
+  return webSearchImageMaxResultOptions.includes(
+    value as WebSearchImageMaxResults,
+  )
+    ? (value as WebSearchImageMaxResults)
+    : 3;
+}
+
+function getInitialWebSearchImageCaptions() {
+  return (
+    new URLSearchParams(window.location.search).get('image_captions') !==
+    'false'
+  );
 }
 
 function getInitialWebSearchReturnTokenBudget(): WebSearchReturnTokenBudget | null {
@@ -512,9 +543,12 @@ function setOptionQueryParameter(
   name:
     | 'api'
     | 'delivery'
+    | 'image_captions'
+    | 'image_max_results'
     | 'model'
     | 'reasoning'
     | 'return_token_budget'
+    | 'search_content'
     | 'search_context_size'
     | 'summary'
     | 'web_search',
@@ -662,6 +696,13 @@ export function ChatPage() {
     useState<ReasoningSummary | null>(getInitialReasoningSummary);
   const [selectedTools, setSelectedTools] = useState<ChatTool[]>(() =>
     getInitialWebSearchOption() ? ['web_search'] : [],
+  );
+  const [webSearchContent, setWebSearchContent] =
+    useState<WebSearchContentOption>(getInitialWebSearchContent);
+  const [webSearchImageMaxResults, setWebSearchImageMaxResults] =
+    useState<WebSearchImageMaxResults>(getInitialWebSearchImageMaxResults);
+  const [webSearchImageCaptions, setWebSearchImageCaptions] = useState(
+    getInitialWebSearchImageCaptions,
   );
   const [webSearchContextSize, setWebSearchContextSize] =
     useState<WebSearchContextSize | null>(getInitialWebSearchContextSize);
@@ -820,6 +861,17 @@ export function ChatPage() {
             : {}),
           ...(api === 'responses' && selectedTools.includes('web_search')
             ? {
+                ...(webSearchContent === 'image'
+                  ? { searchContentTypes: ['image'] }
+                  : webSearchContent === 'image_text'
+                    ? { searchContentTypes: ['image', 'text'] }
+                    : {}),
+                ...(webSearchContent !== 'text'
+                  ? {
+                      imageCaptions: webSearchImageCaptions,
+                      imageMaxResults: webSearchImageMaxResults,
+                    }
+                  : {}),
                 ...(webSearchContextSize
                   ? { searchContextSize: webSearchContextSize }
                   : {}),
@@ -1041,9 +1093,40 @@ export function ChatPage() {
     setOptionQueryParameter('web_search', enabled ? 'true' : null);
 
     if (!enabled) {
+      setWebSearchContent('text');
+      setWebSearchImageMaxResults(3);
+      setWebSearchImageCaptions(true);
+      setOptionQueryParameter('search_content', null);
+      setOptionQueryParameter('image_max_results', null);
+      setOptionQueryParameter('image_captions', null);
       handleWebSearchContextSizeChange(null);
       handleWebSearchReturnTokenBudgetChange(null);
     }
+  }
+
+  function handleWebSearchContentChange(nextContent: WebSearchContentOption) {
+    setWebSearchContent(nextContent);
+    setOptionQueryParameter(
+      'search_content',
+      nextContent === 'text' ? null : nextContent,
+    );
+
+    if (nextContent === 'text') {
+      setOptionQueryParameter('image_max_results', null);
+      setOptionQueryParameter('image_captions', null);
+    }
+  }
+
+  function handleWebSearchImageMaxResultsChange(
+    nextMaxResults: WebSearchImageMaxResults,
+  ) {
+    setWebSearchImageMaxResults(nextMaxResults);
+    setOptionQueryParameter('image_max_results', String(nextMaxResults));
+  }
+
+  function handleWebSearchImageCaptionsChange(enabled: boolean) {
+    setWebSearchImageCaptions(enabled);
+    setOptionQueryParameter('image_captions', enabled ? 'true' : 'false');
   }
 
   function handleWebSearchContextSizeChange(
@@ -1287,6 +1370,81 @@ export function ChatPage() {
               </label>
               {api === 'responses' && selectedTools.includes('web_search') && (
                 <div className="chat-web-search-options">
+                  <label className="chat-option" htmlFor="search-content">
+                    <span>Search content</span>
+                    <select
+                      aria-label="Search content"
+                      disabled={isLoading}
+                      id="search-content"
+                      onChange={(event) =>
+                        handleWebSearchContentChange(
+                          event.target.value as WebSearchContentOption,
+                        )
+                      }
+                      value={webSearchContent}
+                    >
+                      <option value="text">Text</option>
+                      <option value="image">Images</option>
+                      <option value="image_text">Images + text</option>
+                    </select>
+                    <small>
+                      Choose text results, image results, or images with
+                      supporting text results.
+                    </small>
+                  </label>
+                  {webSearchContent !== 'text' && (
+                    <>
+                      <label
+                        className="chat-option"
+                        htmlFor="image-max-results"
+                      >
+                        <span>Max image results</span>
+                        <select
+                          aria-label="Max image results"
+                          disabled={isLoading}
+                          id="image-max-results"
+                          onChange={(event) =>
+                            handleWebSearchImageMaxResultsChange(
+                              Number(
+                                event.target.value,
+                              ) as WebSearchImageMaxResults,
+                            )
+                          }
+                          value={webSearchImageMaxResults}
+                        >
+                          {webSearchImageMaxResultOptions.map((count) => (
+                            <option key={count} value={count}>
+                              {count}
+                            </option>
+                          ))}
+                        </select>
+                        <small>
+                          Limit the number of image results returned by the
+                          search.
+                        </small>
+                      </label>
+                      <label className="chat-tool">
+                        <input
+                          aria-label="Include image captions"
+                          checked={webSearchImageCaptions}
+                          disabled={isLoading}
+                          onChange={(event) =>
+                            handleWebSearchImageCaptionsChange(
+                              event.target.checked,
+                            )
+                          }
+                          type="checkbox"
+                        />
+                        <span>
+                          <strong>Include image captions</strong>
+                          <small>
+                            Ask for short descriptions when captions are
+                            available.
+                          </small>
+                        </span>
+                      </label>
+                    </>
+                  )}
                   <label className="chat-option" htmlFor="search-context-size">
                     <span>Search context size</span>
                     <select
