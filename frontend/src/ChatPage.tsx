@@ -76,6 +76,15 @@ interface ChatWebSearch {
 }
 
 type ChatItem = ChatMessage | ChatReasoningSummary | ChatWebSearch;
+type ChatTraceItem = ChatReasoningSummary | ChatWebSearch;
+
+interface ChatTraceGroup {
+  role: 'trace';
+  items: ChatTraceItem[];
+  startIndex: number;
+}
+
+type RenderChatItem = ChatMessage | ChatTraceGroup;
 
 interface ApiErrorResponse {
   error?: string;
@@ -204,6 +213,69 @@ function getWebSearchOverallStatus(updates: WebSearchUpdate[]) {
   return 'Complete';
 }
 
+function isChatTraceItem(item: ChatItem | undefined): item is ChatTraceItem {
+  return item?.role === 'reasoning-summary' || item?.role === 'web-search';
+}
+
+function groupChatItems(items: ChatItem[]): RenderChatItem[] {
+  const groupedItems: RenderChatItem[] = [];
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+
+    if (!isChatTraceItem(item)) {
+      groupedItems.push(item);
+      continue;
+    }
+
+    const traceItems: ChatTraceItem[] = [item];
+    let nextIndex = index + 1;
+
+    while (nextIndex < items.length) {
+      const nextItem = items[nextIndex];
+
+      if (!isChatTraceItem(nextItem)) {
+        break;
+      }
+
+      traceItems.push(nextItem);
+      nextIndex += 1;
+    }
+
+    groupedItems.push({
+      items: traceItems,
+      role: 'trace',
+      startIndex: index,
+    });
+    index = nextIndex - 1;
+  }
+
+  return groupedItems;
+}
+
+function getTraceSummary(items: ChatTraceItem[]) {
+  const searchCount = items.filter((item) => item.role === 'web-search').length;
+  const stepLabel = `${items.length} ${items.length === 1 ? 'step' : 'steps'}`;
+  const searchLabel = `${searchCount} ${searchCount === 1 ? 'search' : 'searches'}`;
+
+  return searchCount > 0 ? `${stepLabel} · ${searchLabel}` : stepLabel;
+}
+
+function getTraceOverallStatus(items: ChatTraceItem[]) {
+  const updates = items.flatMap((item) =>
+    item.role === 'web-search' ? item.updates : [],
+  );
+
+  return updates.length > 0 ? getWebSearchOverallStatus(updates) : 'Complete';
+}
+
+function getLastUserIndex(items: ChatItem[]) {
+  return items.reduce(
+    (lastIndex, item, index) => (item.role === 'user' ? index : lastIndex),
+    -1,
+  );
+}
+
 function getWebSearchActionDescription(action?: WebSearchAction) {
   if (!action) {
     return 'Working with the web…';
@@ -313,6 +385,62 @@ function getTokenUsage(rawResponse: unknown): TokenUsage | null {
 
 function isChatMessage(item: ChatItem): item is ChatMessage {
   return item.role === 'user' || item.role === 'assistant';
+}
+
+function TraceItemView({ item }: { item: ChatTraceItem }) {
+  if (item.role === 'reasoning-summary') {
+    return (
+      <details className="chat-reasoning-summary" open>
+        <summary>Reasoning summary</summary>
+        <div className="chat-reasoning-summary-content">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {item.content}
+          </ReactMarkdown>
+        </div>
+      </details>
+    );
+  }
+
+  return (
+    <details aria-label="Web search activity" className="chat-web-search" open>
+      <summary className="chat-web-search-summary">
+        <span className="chat-web-search-title">Web search</span>
+        <span className="chat-web-search-overall-status">
+          {getWebSearchOverallStatus(item.updates)}
+        </span>
+      </summary>
+      <ul className="chat-web-search-events">
+        {item.updates.map((update) => {
+          const sources =
+            update.action?.type === 'search'
+              ? (update.action.sources ?? [])
+              : [];
+
+          return (
+            <li key={update.itemId}>
+              <div className="chat-web-search-event-header">
+                <span className={`chat-web-search-status ${update.status}`}>
+                  {getWebSearchStatusLabel(update.status)}
+                </span>
+                <span>{getWebSearchActionDescription(update.action)}</span>
+              </div>
+              {sources.length > 0 && (
+                <ul className="chat-web-search-sources">
+                  {sources.map((source) => (
+                    <li key={source.url}>
+                      <a href={source.url} rel="noreferrer" target="_blank">
+                        {getWebSearchSourceLabel(source)}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
 }
 
 function getInitialApiOption(): ChatApi {
@@ -549,6 +677,9 @@ export function ChatPage() {
   const [tokenUsageModal, setTokenUsageModal] = useState<{
     usage: TokenUsage;
   } | null>(null);
+  const [expandedTraces, setExpandedTraces] = useState<Record<string, boolean>>(
+    {},
+  );
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [isOptionsLoading, setIsOptionsLoading] = useState(true);
@@ -977,6 +1108,34 @@ export function ChatPage() {
     }
   }
 
+  const renderedChatItems = groupChatItems(messages);
+  const lastUserIndex = getLastUserIndex(messages);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    const activeTrace = groupChatItems(messages).find(
+      (item) =>
+        item.role === 'trace' && item.startIndex > getLastUserIndex(messages),
+    );
+
+    if (!activeTrace || activeTrace.role !== 'trace') {
+      return;
+    }
+
+    const traceId = `trace-${activeTrace.startIndex}`;
+
+    setExpandedTraces((currentTraces) => {
+      if (currentTraces[traceId] === false) {
+        return currentTraces;
+      }
+
+      return { ...currentTraces, [traceId]: false };
+    });
+  }, [isLoading, messages]);
+
   return (
     <main className="app-shell">
       <section className="chat-card" aria-labelledby="chat-title">
@@ -1204,71 +1363,45 @@ export function ChatPage() {
                 </div>
               )}
 
-              {messages.map((message, index) =>
-                message.role === 'reasoning-summary' ? (
+              {renderedChatItems.map((message, index) =>
+                message.role === 'trace' ? (
                   <details
-                    className="chat-reasoning-summary"
-                    key={`${message.role}-${index}`}
-                    open
+                    aria-label="Reasoning and web search trace"
+                    className="chat-trace"
+                    key={`trace-${message.startIndex}`}
+                    onToggle={(event) => {
+                      const traceId = `trace-${message.startIndex}`;
+                      const isOpen = event.currentTarget.open;
+
+                      setExpandedTraces((currentTraces) => ({
+                        ...currentTraces,
+                        [traceId]: isOpen,
+                      }));
+                    }}
+                    open={
+                      expandedTraces[`trace-${message.startIndex}`] ??
+                      (isLoading && message.startIndex > lastUserIndex)
+                    }
                   >
-                    <summary>Reasoning summary</summary>
-                    <div className="chat-reasoning-summary-content">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {message.content}
-                      </ReactMarkdown>
-                    </div>
-                  </details>
-                ) : message.role === 'web-search' ? (
-                  <details
-                    aria-label="Web search activity"
-                    className="chat-web-search"
-                    key={`${message.role}-${index}`}
-                    open
-                  >
-                    <summary className="chat-web-search-summary">
-                      <span className="chat-web-search-title">Web search</span>
-                      <span className="chat-web-search-overall-status">
-                        {getWebSearchOverallStatus(message.updates)}
+                    <summary className="chat-trace-summary">
+                      <span className="chat-trace-title">
+                        Reasoning &amp; web search
+                      </span>
+                      <span className="chat-trace-metadata">
+                        {getTraceSummary(message.items)}
+                      </span>
+                      <span className="chat-trace-status">
+                        {getTraceOverallStatus(message.items)}
                       </span>
                     </summary>
-                    <ul className="chat-web-search-events">
-                      {message.updates.map((update) => {
-                        const sources =
-                          update.action?.type === 'search'
-                            ? (update.action.sources ?? [])
-                            : [];
-
-                        return (
-                          <li key={update.itemId}>
-                            <div className="chat-web-search-event-header">
-                              <span
-                                className={`chat-web-search-status ${update.status}`}
-                              >
-                                {getWebSearchStatusLabel(update.status)}
-                              </span>
-                              <span>
-                                {getWebSearchActionDescription(update.action)}
-                              </span>
-                            </div>
-                            {sources.length > 0 && (
-                              <ul className="chat-web-search-sources">
-                                {sources.map((source) => (
-                                  <li key={source.url}>
-                                    <a
-                                      href={source.url}
-                                      rel="noreferrer"
-                                      target="_blank"
-                                    >
-                                      {getWebSearchSourceLabel(source)}
-                                    </a>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <div className="chat-trace-content">
+                      {message.items.map((traceItem, traceIndex) => (
+                        <TraceItemView
+                          item={traceItem}
+                          key={`trace-item-${message.startIndex}-${traceIndex}`}
+                        />
+                      ))}
+                    </div>
                   </details>
                 ) : (
                   <article
@@ -1341,8 +1474,8 @@ export function ChatPage() {
               )}
 
               {isLoading &&
-                messages[messages.length - 1]?.role !== 'assistant' &&
-                messages[messages.length - 1]?.role !== 'reasoning-summary' && (
+                !isChatTraceItem(messages[messages.length - 1]) &&
+                messages[messages.length - 1]?.role !== 'assistant' && (
                   <article className="chat-message assistant" role="status">
                     <span className="message-role">Assistant</span>
                     <p className="thinking">Thinking…</p>

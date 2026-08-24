@@ -481,6 +481,11 @@ describe('App', () => {
     fireEvent.submit(input.closest('form')!);
 
     expect(await screen.findByText('The answer.')).toBeInTheDocument();
+    const trace = screen.getByLabelText('Reasoning and web search trace');
+    expect(trace).not.toHaveAttribute('open');
+    expect(screen.getByText('4 steps · 2 searches')).toBeInTheDocument();
+    fireEvent.click(trace.querySelector('summary')!);
+    expect(trace).toHaveAttribute('open');
     expect(screen.getAllByLabelText('Web search activity')).toHaveLength(2);
     expect(screen.getByText('Searched for “first search”')).toBeInTheDocument();
     expect(
@@ -639,6 +644,43 @@ describe('App', () => {
       stream.send({ type: 'done' });
       stream.close();
     });
+  });
+
+  it('collapses the active trace when streaming completes', async () => {
+    const stream = controlledStreamResponse();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(optionsResponse())
+      .mockResolvedValueOnce(stream.response);
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Model')).toHaveValue('default-model'),
+    );
+    fireEvent.change(screen.getByLabelText('API'), {
+      target: { value: 'responses' },
+    });
+    fireEvent.click(screen.getByLabelText('Web search'));
+    const input = screen.getByLabelText('Message');
+
+    fireEvent.change(input, { target: { value: 'Search for this.' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await act(async () => {
+      stream.send({ content: 'Checking sources.', type: 'reasoning_summary' });
+    });
+    const trace = await screen.findByLabelText(
+      'Reasoning and web search trace',
+    );
+    expect(trace).toHaveAttribute('open');
+
+    await act(async () => {
+      stream.send({ content: 'The answer.', type: 'delta' });
+      stream.send({ type: 'done' });
+      stream.close();
+    });
+
+    expect(await screen.findByText('The answer.')).toBeInTheDocument();
+    expect(trace).not.toHaveAttribute('open');
   });
 
   it('can request a complete response instead of a stream', async () => {
