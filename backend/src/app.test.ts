@@ -102,6 +102,8 @@ describe('API application', () => {
         tools: ['web_search'],
         reasoningEffort: 'minimal',
         reasoningSummary: 'detailed',
+        returnTokenBudget: 'unlimited',
+        searchContextSize: 'high',
         stream: false,
       });
 
@@ -117,6 +119,7 @@ describe('API application', () => {
       ['web_search'],
       'minimal',
       'detailed',
+      { returnTokenBudget: 'unlimited', searchContextSize: 'high' },
     );
   });
 
@@ -171,6 +174,7 @@ describe('API application', () => {
       'low',
       'concise',
       expect.any(AbortSignal),
+      { returnTokenBudget: null, searchContextSize: null },
     );
   });
 
@@ -256,6 +260,24 @@ describe('API application', () => {
 
     expect(response.status).toBe(400);
     expect(completeChat).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid web search parameters', async () => {
+    const completeResponse = vi.fn();
+    const response = await request(createApp({ completeResponse, models }))
+      .post('/api/chat')
+      .send({
+        api: 'responses',
+        messages,
+        model: 'default-model',
+        returnTokenBudget: '50000',
+        searchContextSize: 'extreme',
+        stream: false,
+        tools: ['web_search'],
+      });
+
+    expect(response.status).toBe(400);
+    expect(completeResponse).not.toHaveBeenCalled();
   });
 
   it('rejects a reasoning summary for Chat Completions', async () => {

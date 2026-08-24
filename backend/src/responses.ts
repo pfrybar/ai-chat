@@ -14,6 +14,7 @@ import type {
   ChatStreamResult,
   ReasoningEffort,
   WebSearchAction,
+  WebSearchOptions,
   WebSearchStatus,
   WebSearchUpdate,
 } from './chat.js';
@@ -22,12 +23,36 @@ import { createOpenAIClient } from './openai.js';
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed';
 export type ChatTool = 'web_search';
 
+const defaultWebSearchOptions: WebSearchOptions = {
+  returnTokenBudget: null,
+  searchContextSize: null,
+};
+
 function toResponseInput(messages: ChatMessage[]): ResponseInput {
   return messages.map(({ content, role }) => ({ content, role }));
 }
 
-function toResponseTools(tools: ChatTool[]): ResponseTool[] | undefined {
-  return tools.includes('web_search') ? [{ type: 'web_search' }] : undefined;
+function toResponseTools(
+  tools: ChatTool[],
+  webSearchOptions: WebSearchOptions,
+): ResponseTool[] | undefined {
+  if (!tools.includes('web_search')) {
+    return undefined;
+  }
+
+  const webSearchTool = {
+    type: 'web_search' as const,
+    ...(webSearchOptions.searchContextSize
+      ? { search_context_size: webSearchOptions.searchContextSize }
+      : {}),
+    ...(webSearchOptions.returnTokenBudget
+      ? { return_token_budget: webSearchOptions.returnTokenBudget }
+      : {}),
+  };
+
+  // The installed SDK does not yet declare return_token_budget, but the current
+  // Responses API accepts it on the web_search tool.
+  return [webSearchTool as unknown as ResponseTool];
 }
 
 function toReasoning(
@@ -169,9 +194,10 @@ export async function completeResponse(
   tools: ChatTool[],
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
+  webSearchOptions: WebSearchOptions = defaultWebSearchOptions,
 ): Promise<ChatResult> {
   const client = createOpenAIClient();
-  const responseTools = toResponseTools(tools);
+  const responseTools = toResponseTools(tools, webSearchOptions);
   const reasoning = toReasoning(reasoningEffort, reasoningSummary);
   const response = await client.responses.create({
     ...(responseTools ? { include: ['web_search_call.action.sources'] } : {}),
@@ -205,9 +231,10 @@ export async function streamResponse(
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
   signal?: AbortSignal,
+  webSearchOptions: WebSearchOptions = defaultWebSearchOptions,
 ): Promise<ChatStreamResult> {
   const client = createOpenAIClient();
-  const responseTools = toResponseTools(tools);
+  const responseTools = toResponseTools(tools, webSearchOptions);
   const reasoning = toReasoning(reasoningEffort, reasoningSummary);
   const responseStream = await client.responses.create(
     {

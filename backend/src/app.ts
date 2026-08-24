@@ -9,6 +9,9 @@ import {
   type ChatRole,
   type ChatStreamResult,
   type ReasoningEffort,
+  type WebSearchContextSize,
+  type WebSearchOptions,
+  type WebSearchReturnTokenBudget,
   type WebSearchUpdate,
 } from './chat.js';
 import {
@@ -59,6 +62,7 @@ type ResponseCompleteService = (
   tools: ChatTool[],
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
+  webSearchOptions?: WebSearchOptions,
 ) => Promise<ChatResult>;
 type ResponseStreamService = (
   messages: ChatMessage[],
@@ -67,6 +71,7 @@ type ResponseStreamService = (
   reasoningEffort: ReasoningEffort | null,
   reasoningSummary: ReasoningSummary | null,
   signal?: AbortSignal,
+  webSearchOptions?: WebSearchOptions,
 ) => Promise<ChatStreamResult>;
 
 export interface AppOptions {
@@ -179,6 +184,39 @@ function parseReasoningSummary(
   }
 
   return value as ReasoningSummary;
+}
+
+const validWebSearchContextSizes = new Set<WebSearchContextSize>([
+  'low',
+  'medium',
+  'high',
+]);
+
+function parseWebSearchContextSize(
+  value: unknown,
+): WebSearchContextSize | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (
+    typeof value !== 'string' ||
+    !validWebSearchContextSizes.has(value as WebSearchContextSize)
+  ) {
+    return undefined;
+  }
+
+  return value as WebSearchContextSize;
+}
+
+function parseWebSearchReturnTokenBudget(
+  value: unknown,
+): WebSearchReturnTokenBudget | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  return value === 'unlimited' ? 'unlimited' : undefined;
 }
 
 function getErrorMessage(error: unknown) {
@@ -339,6 +377,12 @@ export function createApp(options: AppOptions = {}) {
     const reasoningSummary = isRecord(request.body)
       ? parseReasoningSummary(request.body.reasoningSummary)
       : undefined;
+    const searchContextSize = isRecord(request.body)
+      ? parseWebSearchContextSize(request.body.searchContextSize)
+      : undefined;
+    const returnTokenBudget = isRecord(request.body)
+      ? parseWebSearchReturnTokenBudget(request.body.returnTokenBudget)
+      : undefined;
     const stream = isRecord(request.body) ? request.body.stream : null;
 
     if (
@@ -350,11 +394,17 @@ export function createApp(options: AppOptions = {}) {
       !tools ||
       reasoningEffort === undefined ||
       reasoningSummary === undefined ||
+      searchContextSize === undefined ||
+      returnTokenBudget === undefined ||
       (api === 'chat' &&
         (tools.length > 0 ||
           reasoningSummary !== null ||
           (reasoningEffort !== null &&
-            !validChatReasoningEfforts.has(reasoningEffort)))) ||
+            !validChatReasoningEfforts.has(reasoningEffort)) ||
+          searchContextSize !== null ||
+          returnTokenBudget !== null)) ||
+      (tools.length === 0 &&
+        (searchContextSize !== null || returnTokenBudget !== null)) ||
       typeof stream !== 'boolean'
     ) {
       response.status(400).json({ error: 'Invalid chat request.' });
@@ -362,6 +412,10 @@ export function createApp(options: AppOptions = {}) {
     }
 
     const chatApi = api as ChatApi;
+    const webSearchOptions: WebSearchOptions = {
+      returnTokenBudget,
+      searchContextSize,
+    };
     const logLabel =
       chatApi === 'chat' ? 'Chat completion' : 'Responses API request';
 
@@ -378,6 +432,7 @@ export function createApp(options: AppOptions = {}) {
                 reasoningEffort,
                 reasoningSummary,
                 signal,
+                webSearchOptions,
               ),
         logLabel,
       );
@@ -395,6 +450,7 @@ export function createApp(options: AppOptions = {}) {
               tools,
               reasoningEffort,
               reasoningSummary,
+              webSearchOptions,
             ),
       logLabel,
     );

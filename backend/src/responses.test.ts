@@ -58,6 +58,7 @@ describe('Responses API client', () => {
         ['web_search'],
         'high',
         'detailed',
+        { returnTokenBudget: 'unlimited', searchContextSize: 'low' },
       ),
     ).resolves.toEqual({
       content: 'Hello from the Responses API.',
@@ -103,7 +104,13 @@ describe('Responses API client', () => {
       input: [{ content: 'Hello', role: 'user' }],
       model: 'test-model',
       reasoning: { effort: 'high', summary: 'detailed' },
-      tools: [{ type: 'web_search' }],
+      tools: [
+        {
+          return_token_budget: 'unlimited',
+          search_context_size: 'low',
+          type: 'web_search',
+        },
+      ],
       store: false,
     });
   });
@@ -166,6 +173,7 @@ describe('Responses API client', () => {
       'low',
       'concise',
       signal,
+      { returnTokenBudget: 'unlimited', searchContextSize: 'high' },
     );
     const chunks = [];
 
@@ -256,7 +264,13 @@ describe('Responses API client', () => {
         model: 'test-model',
         reasoning: { effort: 'low', summary: 'concise' },
         include: ['web_search_call.action.sources'],
-        tools: [{ type: 'web_search' }],
+        tools: [
+          {
+            return_token_budget: 'unlimited',
+            search_context_size: 'high',
+            type: 'web_search',
+          },
+        ],
         store: false,
         stream: true,
       },

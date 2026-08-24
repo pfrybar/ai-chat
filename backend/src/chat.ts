@@ -11,6 +11,14 @@ export interface ChatMessage {
   content: string;
 }
 
+export type WebSearchContextSize = 'low' | 'medium' | 'high';
+export type WebSearchReturnTokenBudget = 'unlimited';
+
+export interface WebSearchOptions {
+  returnTokenBudget: WebSearchReturnTokenBudget | null;
+  searchContextSize: WebSearchContextSize | null;
+}
+
 export interface WebSearchSource {
   title?: string;
   url: string;

@@ -230,7 +230,7 @@ describe('App', () => {
     window.history.replaceState(
       null,
       '',
-      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&web_search=true&delivery=complete',
+      '/?api=responses&model=alternate-model&reasoning=high&summary=detailed&web_search=true&search_context_size=high&return_token_budget=unlimited&delivery=complete',
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(optionsResponse());
 
@@ -241,6 +241,10 @@ describe('App', () => {
     );
     expect(screen.getByLabelText('API')).toHaveValue('responses');
     expect(screen.getByLabelText('Web search')).toBeChecked();
+    expect(screen.getByLabelText('Search context size')).toHaveValue('high');
+    expect(screen.getByLabelText('Return token budget')).toHaveValue(
+      'unlimited',
+    );
     expect(screen.getByLabelText('Reasoning effort')).toHaveValue('high');
     expect(screen.getByLabelText('Reasoning summary')).toHaveValue('detailed');
     expect(screen.getByLabelText('Response delivery')).toHaveValue('complete');
@@ -262,6 +266,12 @@ describe('App', () => {
       target: { value: 'alternate-model' },
     });
     fireEvent.click(screen.getByLabelText('Web search'));
+    fireEvent.change(screen.getByLabelText('Search context size'), {
+      target: { value: 'low' },
+    });
+    fireEvent.change(screen.getByLabelText('Return token budget'), {
+      target: { value: 'unlimited' },
+    });
     fireEvent.change(screen.getByLabelText('Reasoning effort'), {
       target: { value: 'xhigh' },
     });
@@ -276,6 +286,8 @@ describe('App', () => {
     expect(query.get('api')).toBe('responses');
     expect(query.get('model')).toBe('alternate-model');
     expect(query.get('web_search')).toBe('true');
+    expect(query.get('search_context_size')).toBe('low');
+    expect(query.get('return_token_budget')).toBe('unlimited');
     expect(query.get('reasoning')).toBe('xhigh');
     expect(query.get('summary')).toBe('concise');
     expect(query.get('delivery')).toBe('complete');
@@ -387,6 +399,12 @@ describe('App', () => {
       target: { value: 'high' },
     });
     fireEvent.click(screen.getByLabelText('Web search'));
+    fireEvent.change(screen.getByLabelText('Search context size'), {
+      target: { value: 'high' },
+    });
+    fireEvent.change(screen.getByLabelText('Return token budget'), {
+      target: { value: 'unlimited' },
+    });
     const input = screen.getByLabelText('Message');
 
     fireEvent.change(input, { target: { value: 'Hello' } });
@@ -404,6 +422,8 @@ describe('App', () => {
           model: 'default-model',
           reasoningEffort: 'high',
           tools: ['web_search'],
+          searchContextSize: 'high',
+          returnTokenBudget: 'unlimited',
           stream: true,
         }),
       }),
@@ -429,9 +449,13 @@ describe('App', () => {
     fireEvent.submit(input.closest('form')!);
 
     expect(await screen.findByText('Here is the result.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Web search activity')).toBeInTheDocument();
+    const webSearchActivity = screen.getByLabelText('Web search activity');
+    expect(webSearchActivity).toBeInTheDocument();
+    expect(webSearchActivity).toHaveAttribute('open');
     expect(screen.getByText('Searched for “latest news”')).toBeInTheDocument();
     expect(screen.getByText('example.com')).toBeInTheDocument();
+    fireEvent.click(webSearchActivity.querySelector('summary')!);
+    expect(webSearchActivity).not.toHaveAttribute('open');
     expect(screen.getByRole('link', { name: 'example.com' })).toHaveAttribute(
       'href',
       'https://example.com/source',

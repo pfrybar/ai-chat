@@ -14,6 +14,8 @@ import remarkGfm from 'remark-gfm';
 type ChatApi = 'chat' | 'responses';
 type ReasoningSummary = 'auto' | 'concise' | 'detailed';
 type ChatTool = 'web_search';
+type WebSearchContextSize = 'low' | 'medium' | 'high';
+type WebSearchReturnTokenBudget = 'unlimited';
 type WebSearchStatus = 'in_progress' | 'searching' | 'completed' | 'failed';
 
 interface WebSearchSource {
@@ -354,6 +356,24 @@ function getInitialWebSearchOption() {
   );
 }
 
+function getInitialWebSearchContextSize(): WebSearchContextSize | null {
+  const value = new URLSearchParams(window.location.search).get(
+    'search_context_size',
+  );
+
+  return value === 'low' || value === 'medium' || value === 'high'
+    ? value
+    : null;
+}
+
+function getInitialWebSearchReturnTokenBudget(): WebSearchReturnTokenBudget | null {
+  return new URLSearchParams(window.location.search).get(
+    'return_token_budget',
+  ) === 'unlimited'
+    ? 'unlimited'
+    : null;
+}
+
 function getInitialStreamingOption() {
   return (
     new URLSearchParams(window.location.search).get('delivery') !== 'complete'
@@ -361,7 +381,15 @@ function getInitialStreamingOption() {
 }
 
 function setOptionQueryParameter(
-  name: 'api' | 'delivery' | 'model' | 'reasoning' | 'summary' | 'web_search',
+  name:
+    | 'api'
+    | 'delivery'
+    | 'model'
+    | 'reasoning'
+    | 'return_token_budget'
+    | 'search_context_size'
+    | 'summary'
+    | 'web_search',
   value: string | null,
 ) {
   const url = new URL(window.location.href);
@@ -507,6 +535,12 @@ export function ChatPage() {
   const [selectedTools, setSelectedTools] = useState<ChatTool[]>(() =>
     getInitialWebSearchOption() ? ['web_search'] : [],
   );
+  const [webSearchContextSize, setWebSearchContextSize] =
+    useState<WebSearchContextSize | null>(getInitialWebSearchContextSize);
+  const [webSearchReturnTokenBudget, setWebSearchReturnTokenBudget] =
+    useState<WebSearchReturnTokenBudget | null>(
+      getInitialWebSearchReturnTokenBudget,
+    );
   const [streaming, setStreaming] = useState(getInitialStreamingOption);
   const [error, setError] = useState<string | null>(null);
   const [rawResponseModal, setRawResponseModal] = useState<{
@@ -652,6 +686,16 @@ export function ChatPage() {
             : {}),
           ...(api === 'responses' && selectedTools.length > 0
             ? { tools: selectedTools }
+            : {}),
+          ...(api === 'responses' && selectedTools.includes('web_search')
+            ? {
+                ...(webSearchContextSize
+                  ? { searchContextSize: webSearchContextSize }
+                  : {}),
+                ...(webSearchReturnTokenBudget
+                  ? { returnTokenBudget: webSearchReturnTokenBudget }
+                  : {}),
+              }
             : {}),
           stream: streaming,
         }),
@@ -840,9 +884,7 @@ export function ChatPage() {
         handleReasoningSummaryChange(null);
       }
 
-      if (selectedTools.length > 0) {
-        handleWebSearchChange(false);
-      }
+      handleWebSearchChange(false);
     }
   }
 
@@ -866,6 +908,25 @@ export function ChatPage() {
   function handleWebSearchChange(enabled: boolean) {
     setSelectedTools(enabled ? ['web_search'] : []);
     setOptionQueryParameter('web_search', enabled ? 'true' : null);
+
+    if (!enabled) {
+      handleWebSearchContextSizeChange(null);
+      handleWebSearchReturnTokenBudgetChange(null);
+    }
+  }
+
+  function handleWebSearchContextSizeChange(
+    nextSize: WebSearchContextSize | null,
+  ) {
+    setWebSearchContextSize(nextSize);
+    setOptionQueryParameter('search_context_size', nextSize);
+  }
+
+  function handleWebSearchReturnTokenBudgetChange(
+    nextBudget: WebSearchReturnTokenBudget | null,
+  ) {
+    setWebSearchReturnTokenBudget(nextBudget);
+    setOptionQueryParameter('return_token_budget', nextBudget);
   }
 
   function handleDeliveryChange(delivery: 'complete' | 'stream') {
@@ -1065,6 +1126,58 @@ export function ChatPage() {
                   </small>
                 </span>
               </label>
+              {api === 'responses' && selectedTools.includes('web_search') && (
+                <div className="chat-web-search-options">
+                  <label className="chat-option" htmlFor="search-context-size">
+                    <span>Search context size</span>
+                    <select
+                      aria-label="Search context size"
+                      disabled={isLoading}
+                      id="search-context-size"
+                      onChange={(event) =>
+                        handleWebSearchContextSizeChange(
+                          event.target.value
+                            ? (event.target.value as WebSearchContextSize)
+                            : null,
+                        )
+                      }
+                      value={webSearchContextSize ?? ''}
+                    >
+                      <option value="">Default (medium)</option>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                    <small>
+                      Low for simple lookups, medium for a balanced default, or
+                      high for answers needing more search detail.
+                    </small>
+                  </label>
+                  <label className="chat-option" htmlFor="return-token-budget">
+                    <span>Return token budget</span>
+                    <select
+                      aria-label="Return token budget"
+                      disabled={isLoading}
+                      id="return-token-budget"
+                      onChange={(event) =>
+                        handleWebSearchReturnTokenBudgetChange(
+                          event.target.value
+                            ? (event.target.value as WebSearchReturnTokenBudget)
+                            : null,
+                        )
+                      }
+                      value={webSearchReturnTokenBudget ?? ''}
+                    >
+                      <option value="">Default</option>
+                      <option value="unlimited">Unlimited</option>
+                    </select>
+                    <small>
+                      Use Unlimited only for high-effort research or evaluation
+                      runs on GPT-5+ reasoning models.
+                    </small>
+                  </label>
+                </div>
+              )}
             </fieldset>
           </aside>
 
@@ -1106,17 +1219,18 @@ export function ChatPage() {
                     </div>
                   </details>
                 ) : message.role === 'web-search' ? (
-                  <section
+                  <details
                     aria-label="Web search activity"
                     className="chat-web-search"
                     key={`${message.role}-${index}`}
+                    open
                   >
-                    <div className="chat-web-search-header">
+                    <summary className="chat-web-search-summary">
                       <span className="chat-web-search-title">Web search</span>
                       <span className="chat-web-search-overall-status">
                         {getWebSearchOverallStatus(message.updates)}
                       </span>
-                    </div>
+                    </summary>
                     <ul className="chat-web-search-events">
                       {message.updates.map((update) => {
                         const sources =
@@ -1155,7 +1269,7 @@ export function ChatPage() {
                         );
                       })}
                     </ul>
-                  </section>
+                  </details>
                 ) : (
                   <article
                     className={`chat-message ${message.role}`}
